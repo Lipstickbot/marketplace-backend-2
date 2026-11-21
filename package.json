@@ -1,0 +1,13 @@
+{
+  "name": "marketplace-backend-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Backend 2 Supabase schema and PostgreSQL isolation tests",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 tests/database.test.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.3.14"
+  }
+}

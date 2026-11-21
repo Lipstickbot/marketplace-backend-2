@@ -1,0 +1,149 @@
+from collections import OrderedDict
+from contextlib import asynccontextmanager
+import math
+import time
+from typing import Annotated
+from uuid import uuid4
+
+from fastapi import Depends, FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import httpx
+
+from .auth import current_token, current_user, gateway
+from .config import Settings
+from .errors import APIError
+from .models import LoginInput, Principal, ProfilePatch, RefreshInput, SessionResponse, SignupInput, SignupResponse
+from .supabase import SupabaseGateway
+from .marketplace import router as marketplace_router
+from .execution import router as execution_router
+from .engine_client import EngineClient
+from .runtime_store import RuntimeStore
+from .body_limit import BodySizeLimit
+
+
+class AuthRateLimiter:
+    """Bounded, per-process limiter. Reverse proxy must limit across replicas."""
+    def __init__(self, limit: int):
+        self.limit = limit
+        self.entries: OrderedDict[str, tuple[float, int]] = OrderedDict()
+
+    def check(self, key: str) -> None:
+        now = time.monotonic()
+        while self.entries and next(iter(self.entries.values()))[0] <= now:
+            self.entries.popitem(last=False)
+        deadline, count = self.entries.get(key, (now + 60, 0))
+        if count >= self.limit or (key not in self.entries and len(self.entries) >= 10000):
+            raise APIError(429, "auth_rate_limited", "Слишком много попыток. Попробуйте позже.",
+                           {"Retry-After": str(max(1, math.ceil(deadline - now)))})
+        self.entries[key] = (deadline, count + 1)
+
+
+def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTransport | None = None,
+               engine_transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
+    settings = settings or Settings.from_env()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        async with httpx.AsyncClient(timeout=settings.auth_timeout_seconds, transport=transport,
+                                     follow_redirects=False, trust_env=False) as client, \
+                   httpx.AsyncClient(timeout=httpx.Timeout(settings.runtime_timeout_seconds, connect=10, pool=10),
+                                     transport=transport, follow_redirects=False, trust_env=False) as runtime_http, \
+                   httpx.AsyncClient(timeout=httpx.Timeout(settings.engine_timeout_seconds, connect=10, pool=10),
+                                     transport=engine_transport, follow_redirects=False, trust_env=False) as engine_http:
+            app.state.gateway = SupabaseGateway(settings, client)
+            app.state.runtime_store = RuntimeStore(settings, runtime_http)
+            app.state.engine_client = EngineClient(settings, engine_http)
+            yield
+
+    app = FastAPI(title="Marketplace Backend 2", version="0.4.0", lifespan=lifespan)
+    app.include_router(marketplace_router)
+    app.include_router(execution_router)
+    app.add_middleware(BodySizeLimit)
+    app.state.auth_limiter = AuthRateLimiter(settings.auth_requests_per_minute)
+    app.add_middleware(CORSMiddleware, allow_origins=list(settings.cors_origins),
+                      allow_credentials=False, allow_methods=["GET", "POST", "PATCH", "DELETE"],
+                      allow_headers=["Authorization", "Content-Type"], expose_headers=["X-Request-ID", "Retry-After"])
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        request.state.request_id = uuid4().hex
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request.state.request_id
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        return response
+
+    @app.exception_handler(APIError)
+    async def api_error(request: Request, error: APIError):
+        payload = {"code": error.code, "message": error.message, "request_id": request.state.request_id}
+        if error.details is not None:
+            payload["details"] = error.details
+        return JSONResponse(status_code=error.status, headers=error.headers,
+                            content={"error": payload})
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, error: RequestValidationError):
+        # FastAPI's default includes invalid input; never echo passwords/tokens.
+        issues = [{"loc": list(issue["loc"]), "type": issue["type"]} for issue in error.errors()]
+        return JSONResponse(status_code=422, content={"error": {"code": "validation_error",
+            "message": "Проверьте поля запроса.", "request_id": request.state.request_id, "issues": issues}})
+
+    async def limit_auth(request: Request):
+        app.state.auth_limiter.check(request.client.host if request.client else "unknown")
+
+    @app.get("/health", tags=["Monitoring"])
+    async def health():
+        return {"status": "ok", "service": "marketplace-backend-2", "version": "0.4.0"}
+
+    @app.post("/auth/signup", response_model=SignupResponse, status_code=201, tags=["Auth"], dependencies=[Depends(limit_auth)])
+    async def signup(body: SignupInput, client: Annotated[SupabaseGateway, Depends(gateway)]):
+        payload = {"email": str(body.email), "password": body.password.get_secret_value(),
+                   "data": {"role": body.role, "display_name": body.display_name, "company_name": body.company_name}}
+        if body.captcha_token:
+            payload["gotrue_meta_security"] = {"captcha_token": body.captcha_token.get_secret_value()}
+        result = await client.request("POST", "/auth/v1/signup", body=payload, operation="signup")
+        if isinstance(result, dict) and result.get("access_token"):
+            return SignupResponse(status="signed_in", session=await client.session_response(result))
+        if not isinstance(result, dict):
+            raise APIError(502, "supabase_contract_error", "Некорректный ответ сервиса авторизации.")
+        return SignupResponse(status="confirmation_required")
+
+    @app.post("/auth/login", response_model=SessionResponse, tags=["Auth"], dependencies=[Depends(limit_auth)])
+    async def login(body: LoginInput, client: Annotated[SupabaseGateway, Depends(gateway)]):
+        payload = {"email": str(body.email), "password": body.password.get_secret_value()}
+        if body.captcha_token:
+            payload["gotrue_meta_security"] = {"captcha_token": body.captcha_token.get_secret_value()}
+        result = await client.request("POST", "/auth/v1/token", body=payload,
+                                      params={"grant_type": "password"}, operation="login")
+        return await client.session_response(result)
+
+    @app.post("/auth/refresh", response_model=SessionResponse, tags=["Auth"], dependencies=[Depends(limit_auth)])
+    async def refresh(body: RefreshInput, client: Annotated[SupabaseGateway, Depends(gateway)]):
+        result = await client.request("POST", "/auth/v1/token", body={"refresh_token": body.refresh_token.get_secret_value()},
+                                      params={"grant_type": "refresh_token"}, operation="refresh")
+        return await client.session_response(result)
+
+    @app.get("/auth/me", response_model=Principal, tags=["Profile"])
+    async def me(user: Annotated[Principal, Depends(current_user)]):
+        return user
+
+    @app.patch("/auth/me", response_model=Principal, tags=["Profile"])
+    async def update_me(body: ProfilePatch, user: Annotated[Principal, Depends(current_user)],
+                        token: Annotated[str, Depends(current_token)], client: Annotated[SupabaseGateway, Depends(gateway)]):
+        await client.request("PATCH", "/rest/v1/profiles", token=token,
+                              params={"id": f"eq.{user.user_id}"}, body=body.model_dump(exclude_unset=True))
+        return await client.authenticate(token)
+
+    @app.post("/auth/logout", status_code=204, tags=["Auth"])
+    async def logout(user: Annotated[Principal, Depends(current_user)], token: Annotated[str, Depends(current_token)],
+                     client: Annotated[SupabaseGateway, Depends(gateway)]):
+        await client.request("POST", "/auth/v1/logout", token=token, params={"scope": "local"})
+        return Response(status_code=204)
+
+    return app
+
+
+# Uvicorn factory: --factory backend.app.main:create_app

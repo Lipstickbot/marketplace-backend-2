@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.pnpm-store/
+ai-engine-upstream/
+supabase/.temp/
+supabase/.branches/
+coverage/
+*.log
+__pycache__/
+.venv/
+.engine-venv/
+.run-deps/
+.run/
+.pytest_cache/
+.DS_Store
