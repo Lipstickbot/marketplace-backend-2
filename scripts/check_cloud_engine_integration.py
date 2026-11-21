@@ -1,8 +1,9 @@
 """Live integration test with one disposable, pre-confirmed business account.
 
 Requires prior authorization to create/delete a temporary test account and data.
-Uses real Supabase Auth/Storage/PostgreSQL and the local mock AI Engine.
+Uses real Supabase Auth/Storage/PostgreSQL and the configured mock AI Engine.
 Credentials stay in memory. A cleanup manifest contains only the test UUID.
+Engine files are deleted, but its technical run/tenant records have no delete API.
 """
 from datetime import UTC, datetime
 import json
@@ -44,11 +45,11 @@ def main():
 
     with httpx.Client(base_url=settings.supabase_url, timeout=60, trust_env=False,
             headers={"apikey": settings.supabase_secret_key.get_secret_value()}) as admin, \
-         httpx.Client(base_url=settings.engine_url, timeout=30, trust_env=False) as engine, \
+         httpx.Client(base_url=settings.engine_url, timeout=settings.engine_timeout_seconds, trust_env=False) as engine, \
          TestClient(create_app(settings)) as api:
         health = checked(api.get("/engine/health"), 200, "engine_health").json()
         if health["llm_provider"] != "mock":
-            raise RuntimeError("Live test is restricted to the local mock LLM")
+            raise RuntimeError("Live test is restricted to the mock LLM")
         try:
             created = checked(admin.post("/auth/v1/admin/users", json={
                 "email": email, "password": password, "email_confirm": True,
@@ -131,8 +132,9 @@ def main():
                         (200, 404), "temporary_account_deleted")
                 checked(admin.get(f"/auth/v1/admin/users/{user_id}"), 404, "temporary_account_absent")
                 manifest.unlink(missing_ok=True)
-    report = {"passed": len(checks), "supabase": "real Auth/Storage/PostgreSQL", "engine": "real local service",
-              "llm_mode": "mock", "test_account_deleted": True, "checks": checks}
+    report = {"passed": len(checks), "supabase": "real Auth/Storage/PostgreSQL", "engine": settings.engine_url,
+              "llm_mode": "mock", "test_account_deleted": True,
+              "engine_technical_metadata_retained": True, "checks": checks}
     (root / ".run" / "cloud-engine-report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print({key: value for key, value in report.items() if key != "checks"})
 
