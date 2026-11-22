@@ -1,0 +1,36 @@
+# Public demo: frontend and Backend 2 in one Docker service.
+# Secrets are supplied in Render, never committed here.
+services:
+  - type: web
+    name: keme-ai-platform
+    runtime: docker
+    plan: free
+    region: frankfurt
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: PORT
+        value: "8001"
+      - key: SUPABASE_URL
+        value: https://qxzhrkchmzmfxvkpnbfr.supabase.co
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: ENGINE_URL
+        value: https://ai-engine-demo.onrender.com
+      - key: ENGINE_JWT_SECRET
+        sync: false
+      - key: ENGINE_JWT_AUDIENCE
+        value: ai-engine
+      - key: ENGINE_JWT_ISSUER
+        value: marketplace-backend
+      - key: ENGINE_JWT_TTL_SECONDS
+        value: "300"
+      - key: ENGINE_TIMEOUT_SECONDS
+        value: "180"
+      - key: CORS_ORIGINS
+        value: ""
