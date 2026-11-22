@@ -20,9 +20,13 @@ from backend.app.main import create_app
 from backend.app.models import Principal
 
 
-def main():
+def main(backend_url=None):
     root = Path(__file__).resolve().parents[1]
     settings = Settings.from_env()
+    if backend_url:
+        parsed = httpx.URL(backend_url)
+        if parsed.scheme != 'https' or parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise RuntimeError('Public backend URL must use HTTPS without credentials, query or fragment')
     if not settings.supabase_secret_key:
         raise RuntimeError("Server key is not configured")
     for fixture in ["fictional-resume.docx", "fictional-brief.pdf"]:
@@ -46,7 +50,7 @@ def main():
     with httpx.Client(base_url=settings.supabase_url, timeout=60, trust_env=False,
             headers={"apikey": settings.supabase_secret_key.get_secret_value()}) as admin, \
          httpx.Client(base_url=settings.engine_url, timeout=settings.engine_timeout_seconds, trust_env=False) as engine, \
-         TestClient(create_app(settings)) as api:
+         (httpx.Client(base_url=backend_url, timeout=180, trust_env=False) if backend_url else TestClient(create_app(settings))) as api:
         health = checked(api.get("/engine/health"), 200, "engine_health").json()
         if health["llm_provider"] != "mock":
             raise RuntimeError("Live test is restricted to the mock LLM")
@@ -133,6 +137,7 @@ def main():
                 checked(admin.get(f"/auth/v1/admin/users/{user_id}"), 404, "temporary_account_absent")
                 manifest.unlink(missing_ok=True)
     report = {"passed": len(checks), "supabase": "real Auth/Storage/PostgreSQL", "engine": settings.engine_url,
+              "backend": backend_url or "in-process TestClient",
               "llm_mode": "mock", "test_account_deleted": True,
               "engine_technical_metadata_retained": True, "checks": checks}
     (root / ".run" / "cloud-engine-report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
@@ -140,4 +145,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--backend-url', help='Published HTTPS Backend URL; omitted uses in-process TestClient')
+    main(parser.parse_args().backend_url)
