@@ -3,9 +3,12 @@ from contextlib import asynccontextmanager
 import math
 import time
 from typing import Annotated
+from pathlib import Path
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, Request, Response
+from fastapi.routing import APIRoute
+from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -57,7 +60,7 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
             app.state.engine_client = EngineClient(settings, engine_http)
             yield
 
-    app = FastAPI(title="Marketplace Backend 2", version="0.4.0", lifespan=lifespan)
+    app = FastAPI(title="Marketplace Backend 2", version="0.5.0", lifespan=lifespan)
     app.include_router(marketplace_router)
     app.include_router(execution_router)
     app.add_middleware(BodySizeLimit)
@@ -96,7 +99,7 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
 
     @app.get("/health", tags=["Monitoring"])
     async def health():
-        return {"status": "ok", "service": "marketplace-backend-2", "version": "0.4.0"}
+        return {"status": "ok", "service": "marketplace-backend-2", "version": "0.5.0"}
 
     @app.post("/auth/signup", response_model=SignupResponse, status_code=201, tags=["Auth"], dependencies=[Depends(limit_auth)])
     async def signup(body: SignupInput, client: Annotated[SupabaseGateway, Depends(gateway)]):
@@ -143,6 +146,13 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
         await client.request("POST", "/auth/v1/logout", token=token, params={"scope": "local"})
         return Response(status_code=204)
 
+    # Keep the existing external contract and provide same-origin browser APIs.
+    browser_api = APIRouter()
+    browser_api.routes.extend(route for route in app.routes if isinstance(route, APIRoute))
+    app.include_router(browser_api, prefix="/api", include_in_schema=False)
+    frontend = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    if frontend.is_dir():
+        app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")
     return app
 
 

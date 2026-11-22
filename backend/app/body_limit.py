@@ -11,7 +11,7 @@ class BodySizeLimit:
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope["method"] not in {"POST", "PATCH", "PUT"}:
             return await self.app(scope, receive, send)
-        maximum = 11 * 1024 * 1024 if scope["path"] == "/files/upload" else 512 * 1024
+        maximum = 11 * 1024 * 1024 if scope["path"] in {"/files/upload", "/api/files/upload"} else 512 * 1024
         messages, size = [], 0
         while True:
             message = await receive()

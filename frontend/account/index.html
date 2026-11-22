@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Кабинет — Keme AI</title>
+    <link rel="icon" href="/brand/keme-logo.webp" />
+    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/account.css" />
+  </head>
+  <body class="directory-page">
+    <header class="nav is-scrolled">
+      <div class="nav__inner">
+        <a class="logo" href="/"
+          ><img
+            class="logo__mark"
+            width="34"
+            height="34"
+            src="/brand/keme-logo.webp"
+            alt=""
+          /><span class="logo__word">Keme <b>AI</b></span></a
+        >
+        <nav class="directory-nav">
+          <a href="/">Главная</a><a href="/catalog/">Каталог</a
+          ><a href="/account/">Кабинет</a>
+        </nav>
+      </div>
+    </header>
+    <main class="container workspace">
+      <header class="workspace-head">
+        <div>
+          <span class="pill">Keme AI</span>
+          <h1 class="display">Рабочий кабинет</h1>
+          <p id="identity" class="lead">
+            Агенты, документы и результаты в одном месте.
+          </p>
+        </div>
+        <button id="logout" class="btn btn--secondary" hidden>Выйти</button>
+      </header>
+      <p id="notice" role="status" aria-live="polite"></p>
+      <div id="workspace">Загрузка…</div>
+    </main>
+    <script type="module" src="/src/account.js"></script>
+  </body>
+</html>

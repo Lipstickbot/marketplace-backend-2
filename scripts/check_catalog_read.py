@@ -5,7 +5,7 @@ import httpx
 def main():
     with httpx.Client(base_url="http://127.0.0.1:8001", timeout=30, trust_env=False) as client:
         response = client.get("/health")
-        assert response.status_code == 200 and response.json()["version"] == "0.4.0"
+        assert response.status_code == 200 and response.json()["version"] == "0.5.0"
         assert client.get("/docs").status_code == 200
         page = client.get("/agents")
         assert page.status_code == 200
@@ -22,7 +22,7 @@ def main():
         for path in ["/connect-requests", "/agent-submissions", "/admin/agents", "/admin/connect-requests", "/admin/agent-submissions", "/files", "/runs"]:
             assert client.get(path).status_code == 401
         assert client.get("/admin/agents", headers={"Authorization": "Bearer invalid-test-token"}).status_code == 401
-        print({"passed": 15, "api_version": "0.4.0", "cloud_records_created": 0})
+        print({"passed": 15, "api_version": "0.5.0", "cloud_records_created": 0})
 
 
 if __name__ == "__main__":

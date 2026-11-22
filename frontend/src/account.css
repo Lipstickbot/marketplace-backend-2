@@ -1,0 +1,139 @@
+.workspace {
+  padding-top: 140px;
+  padding-bottom: 100px;
+  max-width: 1200px;
+}
+.workspace-head {
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  align-items: start;
+  margin-bottom: 36px;
+}
+.workspace h1 {
+  font-size: clamp(32px, 5vw, 60px);
+  margin: 16px 0;
+}
+.workspace h2 {
+  font-size: 24px;
+  margin: 0 0 20px;
+}
+.work-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.work-panel {
+  border: 1px solid #cfe0ef;
+  border-radius: 24px;
+  padding: 28px;
+  background: #ffffffc9;
+  min-width: 0;
+}
+.work-panel.wide {
+  grid-column: 1/-1;
+}
+.work-form {
+  display: grid;
+  gap: 16px;
+}
+.work-form label {
+  display: grid;
+  gap: 8px;
+  font-size: 16px;
+}
+.work-form input,
+.work-form select,
+.work-form textarea {
+  width: 100%;
+  border: 1px solid #bbcfe0;
+  border-radius: 12px;
+  background: white;
+  color: #142d43;
+  padding: 12px;
+  font: inherit;
+}
+.work-form textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+.work-form input[type="checkbox"] {
+  width: auto;
+}
+.work-row,
+.work-tabs {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.work-tabs {
+  margin-bottom: 24px;
+}
+[hidden] {
+  display: none !important;
+}
+#notice:not(:empty) {
+  padding: 16px 20px;
+  border-radius: 14px;
+  background: #e1efff;
+  border: 1px solid #a8c9ed;
+  margin-bottom: 24px;
+}
+#notice.error {
+  background: #fff0eb;
+  color: #8b2d20;
+  border-color: #e6b4a4;
+}
+.work-item {
+  border-top: 1px solid #dae5ee;
+  padding: 16px 0;
+  overflow-wrap: anywhere;
+}
+.work-output {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.7;
+}
+.work-form fieldset {
+  border: 1px solid #dae5ee;
+  border-radius: 12px;
+  padding: 12px;
+}
+.work-form fieldset label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+.muted {
+  color: #4c667c;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.work-panel .btn {
+  font-size: 15px;
+}
+.work-panel button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+@media (max-width: 720px) {
+  .work-grid {
+    grid-template-columns: 1fr;
+  }
+  .workspace {
+    padding-top: 110px;
+  }
+  .work-panel {
+    padding: 20px;
+  }
+  .workspace-head {
+    flex-direction: column;
+  }
+  .directory-nav {
+    gap: 10px !important;
+    font-size: 14px;
+  }
+}

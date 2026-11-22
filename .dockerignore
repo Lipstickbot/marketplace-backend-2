@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+.run
+.run-deps
+.engine-venv
+.venv
+ai-engine-upstream
+**/node_modules
+**/__pycache__
+.pnpm-store
+.pytest_cache
+frontend/dist
+backend/tests
