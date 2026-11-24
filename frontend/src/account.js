@@ -10,6 +10,7 @@ import {
 } from "./api.js";
 import { startGoogleLogin, finishGoogleLogin } from "./google-auth.js";
 import { goHomeAfterAuth } from "./auth-navigation.js";
+import { setupIntegrations, agentLink } from "./integrations.js";
 const root = document.querySelector("#workspace"),
   notice = document.querySelector("#notice");
 const e = (v) =>
@@ -110,6 +111,14 @@ async function businessView() {
   root.querySelector("#run [name=slug]").addEventListener("change", syncRun);
   syncRun();
   await showRuns();
+  await setupIntegrations(root, agents, connections, files, tell);
+  const selected = published.find(a => a.slug === chosen);
+  if (selected) {
+    const linkBox = document.createElement("section"); linkBox.className = "work-panel wide";
+    linkBox.innerHTML = `<h2>${e(selected.name)} — подключение под задачу</h2><p class="muted">1. Опишите задачу и запросите доступ. 2. После одобрения загрузите документы. 3. Запускайте агента здесь или создайте API-подключение ниже для своего приложения.</p><label class="work-form">Ссылка на агента<input readonly value="${e(agentLink(selected.slug))}" aria-label="Ссылка на агента"></label><p class="muted">Ссылку можно открыть на другом устройстве. Для доступа к задачам и документам понадобится вход в ваш аккаунт.</p><a class="btn btn--secondary" href="#application-integrations">Настроить API / LLM</a>`;
+    root.querySelector(".work-grid").prepend(linkBox);
+    root.querySelector("#connect [name=agent_id]").value = selected.id;
+  }
 }
 function syncRun() {
   const form = root.querySelector("#run");
@@ -188,6 +197,10 @@ async function render() {
   saveSession({ ...session(), profile: me });
   document.querySelector("#identity").textContent =
     `${me.display_name || me.email || ""} · ${{ business: "Бизнес", developer: "Разработчик", admin: "Администратор" }[me.role]}`;
+  if (me.role === "business" && intent === "publish") {
+    root.innerHTML = panel("Добавить своего агента", '<p class="muted">Сейчас вы вошли в аккаунт бизнеса: он подключает готовых агентов. Публикация собственного агента доступна аккаунту разработчика.</p><button type="button" class="btn btn--primary" id="developer-signin">Войти как разработчик</button><p><a class="link" href="/catalog/">Вернуться в каталог</a></p>');
+    return;
+  }
   if (me.role === "business") await businessView();
   else if (me.role === "developer") await developerView();
   else await adminView();
@@ -196,6 +209,12 @@ async function render() {
 root.addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button) return;
+  if (button.id === "developer-signin") {
+    button.disabled = true;
+    try { await logout(); authMode = "signup"; await render(); document.querySelector("#identity").textContent = "Агенты, документы и результаты в одном месте."; }
+    catch(error) { tell(error.message,true); button.disabled = false; }
+    return;
+  }
   if (button.id === "google-login") {
     button.disabled = true;
     tell("Открываем Google…");
@@ -236,6 +255,7 @@ root.addEventListener("click", async (event) => {
   }
 });
 root.addEventListener("submit", async (event) => {
+  if (event.target.id === "integration-create") return;
   event.preventDefault();
   const form = event.target,
     button = form.querySelector("button"),

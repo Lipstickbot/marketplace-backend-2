@@ -26,6 +26,7 @@ from .execution import router as execution_router
 from .engine_client import EngineClient
 from .runtime_store import RuntimeStore
 from .body_limit import BodySizeLimit
+from .integrations import router as integrations_router
 
 
 class AuthRateLimiter:
@@ -62,9 +63,10 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
             app.state.engine_client = EngineClient(settings, engine_http)
             yield
 
-    app = FastAPI(title="Marketplace Backend 2", version="0.6.0", lifespan=lifespan)
+    app = FastAPI(title="Marketplace Backend 2", version="0.7.0", lifespan=lifespan)
     app.include_router(marketplace_router)
     app.include_router(execution_router)
+    app.include_router(integrations_router)
     app.add_middleware(BodySizeLimit)
     app.state.auth_limiter = AuthRateLimiter(settings.auth_requests_per_minute)
     app.add_middleware(CORSMiddleware, allow_origins=list(settings.cors_origins),
@@ -139,7 +141,7 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
 
     @app.get("/health", tags=["Monitoring"])
     async def health():
-        return {"status": "ok", "service": "marketplace-backend-2", "version": "0.6.0"}
+        return {"status": "ok", "service": "marketplace-backend-2", "version": "0.7.0"}
 
     @app.post("/auth/signup", response_model=SignupResponse, status_code=201, tags=["Auth"], dependencies=[Depends(limit_auth)])
     async def signup(body: SignupInput, client: Annotated[SupabaseGateway, Depends(gateway)]):

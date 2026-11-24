@@ -109,6 +109,24 @@ def main(backend_url=None):
             history = checked(api.get("/runs", headers=headers), 200, "cloud_run_history").json()["items"]
             assert len(history) == 5 and sum(item["status"] == "success" for item in history) == 4
             assert all("response" not in item and "message" not in item for item in history)
+            application = checked(api.post("/integrations", headers=headers, json={
+                "agent_slug": "support", "name": "Disposable application integration", "task": "Answer delivery questions for a fictional shop.",
+                "language": "ru", "file_ids": [files["knowledge_base"]["id"]], "expires_in_days": 1
+            }), 201, "scoped_application_key_created").json()
+            key = application["api_key"]
+            application_headers = {"Authorization": "Bearer " + key}
+            model_list = checked(api.get("/v1/models", headers=application_headers), 200, "scoped_model_list").json()
+            assert [item["id"] for item in model_list["data"]] == ["keme/support"]
+            listed = checked(api.get("/integrations", headers=headers), 200, "safe_application_list")
+            assert key not in listed.text and "key_hash" not in listed.text
+            request_body = {"model": "keme/support", "messages": [{"role": "user", "content": "Сколько стоит доставка?"}], "stream": False}
+            completion = checked(api.post("/v1/chat/completions", headers=application_headers, json=request_body),
+                                 200, "application_real_rag_execution").json()
+            assert completion["choices"][0]["message"]["content"] and completion["keme"]["audit_saved"] is True and completion["keme"]["mode"] == "mock"
+            checked(api.post("/v1/chat/completions", headers=application_headers, json={**request_body, "model": "keme/hr"}),
+                    403, "application_model_scope_enforced")
+            checked(api.delete("/integrations/" + application["integration"]["id"], headers=headers), 204, "application_key_revoked")
+            checked(api.post("/v1/chat/completions", headers=application_headers, json=request_body), 401, "revoked_application_key_rejected")
             for row in files.values():
                 checked(api.delete(f"/files/{row['id']}", headers=headers), 204, "both_file_copies_deleted")
                 checked(api.get(f"/files/{row['id']}", headers=headers), 404, "deleted_file_unavailable")
@@ -128,7 +146,7 @@ def main(backend_url=None):
                     paths = [row["object_path"] for row in rows]
                     assert all(path.startswith(f"{user_id}/{user_id}/") for path in paths)
                     checked(admin.request("DELETE", "/storage/v1/object/agent-files", json={"prefixes": paths}), (200, 204), "cleanup_storage_objects")
-                for table in ["agent_files", "agent_runs"]:
+                for table in ["agent_integrations", "agent_files", "agent_runs"]:
                     checked(admin.delete(f"/rest/v1/{table}", params=own), 204, f"cleanup_{table}")
                 checked(admin.delete("/rest/v1/connect_requests", params={"company_id": f"eq.{user_id}", "requested_by": f"eq.{user_id}"}),
                         204, "cleanup_connection_fixtures")

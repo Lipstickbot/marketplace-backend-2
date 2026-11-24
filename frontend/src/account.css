@@ -123,7 +123,18 @@
 .auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: #d8e3ed; }
 .google-button { display: flex; width: 100%; justify-content: center; align-items: center; gap: 12px; background: #fff; }
 .google-note { margin-top: 12px; }
+.integration-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.integration-heading { margin: 28px 0 16px; }
+.integration-guide { margin-top: 24px; line-height: 1.8; }
+.integration-guide summary, .integration-credentials summary { cursor: pointer; font-weight: 600; }
+.integration-credentials { margin-top: 24px; padding: 24px; border: 1px solid #92b9eb; background: #edf5ff; border-radius: 18px; display: grid; gap: 16px; }
+.integration-credentials label { display: grid; gap: 8px; font-size: 15px; }
+.integration-credentials input { width: 100%; min-width: 0; padding: 12px; border: 1px solid #bbcfe0; background: white; border-radius: 10px; font: inherit; }
+.integration-copy { display: flex; gap: 8px; }
+.work-code { overflow: auto; padding: 16px; background: #132b43; color: #e7f3ff; border-radius: 12px; font-size: 13px; line-height: 1.7; }
 @media (max-width: 720px) {
+  .integration-fields { grid-template-columns: 1fr; }
+  .integration-copy { flex-wrap: wrap; }
   .work-grid {
     grid-template-columns: 1fr;
   }

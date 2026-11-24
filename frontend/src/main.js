@@ -5,7 +5,7 @@ import { createWave } from './wave.js';
 import { setupFx, splitWords, trackProgress, onScrollFx } from './fx.js';
 import { setupSmoothScroll, pauseScroll, setupNavPill, splitHeading, setupPrism, onScrollPrism } from './prism.js';
 import { submitDeveloperApplication, submitConnectionRequest, session, request, saveSession } from './api.js';
-import { consumeAuthNotice } from './auth-navigation.js';
+import { consumeAuthNotice, consumeAuthAgent } from './auth-navigation.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -524,9 +524,16 @@ applyLang(lang);
 const arrival = new URL(location.href);
 const authNotice = consumeAuthNotice();
 const feedback = $('#auth-feedback');
+const authAgent = consumeAuthAgent();
 if (authNotice) {
   feedback.hidden = false;
   feedback.textContent = t(authNotice === 'confirm_email' ? 'auth.confirm' : authNotice === 'registered' ? 'auth.registered' : 'auth.welcome');
+}
+if (authAgent) {
+  feedback.hidden = false;
+  const resume = document.createElement('a'); resume.className = 'auth-resume';
+  resume.href = `/account/?agent=${encodeURIComponent(authAgent)}&intent=connect`;
+  resume.textContent = t('action.resumeConnect'); feedback.append(resume);
 }
 try {
   const draft = JSON.parse(sessionStorage.getItem('keme-draft'));

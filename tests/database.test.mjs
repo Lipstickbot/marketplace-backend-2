@@ -88,8 +88,8 @@ test('catalog seed contains three explicit mock demos and nine coming-soon cards
   assert.ok(demoCatalog.filter((a) => a.status === 'published').every((a) => a.input_schema.properties.message));
 });
 
-test('all six platform tables enable RLS and remove inherited TRUNCATE grants', async () => {
-  const tables = ['profiles', 'agents', 'connect_requests', 'agent_submissions', 'agent_runs', 'agent_files'];
+test('all platform tables enable RLS and remove inherited TRUNCATE grants', async () => {
+  const tables = ['profiles', 'agents', 'connect_requests', 'agent_submissions', 'agent_runs', 'agent_files', 'agent_integrations'];
   const { rows } = await query(`select relname, relrowsecurity from pg_class
     where relnamespace = 'public'::regnamespace and relkind = 'r' order by relname`);
   assert.deepEqual(rows.map((r) => r.relname), [...tables].sort());
@@ -100,6 +100,21 @@ test('all six platform tables enable RLS and remove inherited TRUNCATE grants', 
       assert.equal(result.rows[0].allowed, false);
     }
   }
+});
+
+test('application key hashes and task settings are server-only and tenant-bound', async () => {
+  for (const role of ['anon','authenticated']) {
+    for (const privilege of ['SELECT','INSERT','UPDATE','DELETE']) {
+      const r = await query('select has_table_privilege($1,$2,$3) as allowed',[role,'public.agent_integrations',privilege]);
+      assert.equal(r.rows[0].allowed,false);
+    }
+  }
+  const created = await service(() => query(`insert into public.agent_integrations(user_id,company_id,agent_id,agent_slug,name,key_hash,key_prefix,expires_at)
+    values ($1,$1,$2,'marketing','Test',$3,'keme_test1234',now()+interval '1 day') returning id`,[ids.a,ids.agent,'a'.repeat(64)]));
+  await denied(user(ids.a,()=>query('select * from public.agent_integrations')));
+  await denied(user(ids.b,()=>query('select * from public.agent_integrations')));
+  await denied(service(()=>query(`update public.agent_integrations set company_id=$1 where id=$2`,[ids.b,created.rows[0].id])),'23514');
+  await service(()=>query('delete from public.agent_integrations where id=$1',[created.rows[0].id]));
 });
 
 test('signup creates profiles, backfills existing accounts, and ignores a forged admin role', async () => {

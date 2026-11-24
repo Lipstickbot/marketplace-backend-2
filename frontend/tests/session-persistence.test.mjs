@@ -74,3 +74,11 @@ test("auth outcomes return to the homepage with a one-use notice",async()=>{
     nav.goHomeAfterAuth(reason);assert.equal(target,"/");assert.equal(nav.consumeAuthNotice(),reason);assert.equal(nav.consumeAuthNotice(),null);
   }
 });
+
+test("selected agent survives homepage redirect without accepting arbitrary return URLs",async()=>{
+  const nav=await import("../src/auth-navigation.js");
+  globalThis.location={href:"https://example.com/account/?agent=support",replace:()=>{}};
+  nav.goHomeAfterAuth();assert.equal(nav.consumeAuthAgent(),"support");assert.equal(nav.consumeAuthAgent(),null);
+  globalThis.location.href="https://example.com/account/?agent=https://evil.example/";
+  nav.goHomeAfterAuth();assert.equal(nav.consumeAuthAgent(),null);
+});

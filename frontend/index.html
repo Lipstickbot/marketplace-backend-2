@@ -59,10 +59,6 @@
       <div class="container scene__grid">
         <section class="hero" id="top">
           <h1 class="display hero__title" data-reveal data-i18n-html="hero.title">ИИ-агенты<br>Для Вашего <em>Бизнеса</em></h1>
-          <div class="hero-actions">
-            <button type="button" class="btn btn--primary" data-open="conn" data-i18n="action.connect">Подключить агента</button>
-            <button type="button" class="btn btn--secondary" data-open="dev" data-i18n="action.publish">Добавить своего агента</button>
-          </div>
           <div class="hero__sea" data-sea-anchor aria-hidden="true"></div>
         </section>
         <div class="scene__text">
@@ -293,7 +289,7 @@
           <span class="areas__tier areas__tier--soon" data-i18n="ar.soon">Скоро</span>
           <ul class="areas__soon" id="areasSoon"></ul>
           <p class="areas__offer"><span data-i18n="ar.offer">Есть агент для другого направления?</span>
-            <button type="button" class="link" data-open="dev"><span data-i18n="ar.offerBtn">Предложите его</span> →</button></p>
+            <a href="/catalog/" class="link" data-i18n="nav.agents">Агенты</a></p>
         </div>
       </div>
     </section>
@@ -310,9 +306,7 @@
               <h2 class="h2" data-i18n="dv.title">Предложите своего агента</h2>
               <p class="lead" data-i18n="dv.sub"></p>
             </div>
-            <button type="button" class="btn btn--primary" data-open="dev"><span data-i18n="dv.cta">Предложить агента</span>
-              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
+            <a href="/catalog/" class="btn btn--primary" data-i18n="nav.agents">Агенты</a>
           </div>
           <ol class="dsteps">
             <li><span>01</span><h3 data-i18n="d1.t"></h3><p data-i18n="d1.d"></p></li>
@@ -339,7 +333,6 @@
             <a href="/catalog/" class="btn btn--primary" data-magnetic><span data-i18n="fn.cta1">Перейти к агентам</span>
               <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </a>
-            <button type="button" class="btn btn--glass" data-magnetic data-open="dev" data-i18n="fn.cta2">Предложить агента</button>
           </div>
         </div>
         <nav class="final__cols" aria-label="Footer">
@@ -354,8 +347,6 @@
           <div>
             <h4 data-i18n="ft.actions">Действия</h4>
             <a href="/catalog/" data-i18n="ft.find">Найти агента</a>
-            <button type="button" data-open="conn" data-i18n="ft.connect">Запросить подключение</button>
-            <button type="button" data-open="dev" data-i18n="ft.offer">Предложить агента</button>
           </div>
         </nav>
       </div>
