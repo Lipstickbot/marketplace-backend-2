@@ -88,15 +88,39 @@ async function businessView() {
     all("/files"),
   ]);
   const published = agents.filter((a) => a.status === "published");
+  const approved = published.filter((a) => connections.some((c) => c.agent_id === a.id && c.status === "approved"));
   const chosen = new URLSearchParams(location.search).get("agent");
   const options = published
     .map((a) => `<option value="${e(a.id)}">${e(a.name)}</option>`)
     .join("");
   root.innerHTML = `<div class="work-grid">${panel("Подключить готового агента", `<p class="muted">Выберите агента из каталога для работы в вашей компании. Эта заявка не публикует нового агента.</p><form id="connect" class="work-form"><label>Агент<select name="agent_id">${options}</select></label><label>Задача<textarea name="message" maxlength="4000"></textarea></label><button class="btn btn--primary">Запросить подключение</button></form>${connections.map((c) => `<div class="work-item"><strong>${e(agents.find((a) => a.id === c.agent_id)?.name || c.agent_id)}</strong><p>${e(status(c.status))}</p><p>${e(c.review_note || "")}</p></div>`).join("")}`)}
   ${panel("Документы", `<p class="muted">PDF, DOCX или TXT до 10 MiB. Для проверки используйте вымышленные данные.</p><form id="upload" class="work-form"><label>Файл<input name="file" type="file" accept=".pdf,.docx,.txt" required></label><label>Назначение<select name="purpose"><option value="brief">Бриф Marketing</option><option value="knowledge_base">База знаний Support</option><option value="resume">Резюме HR</option><option value="job_description">Вакансия HR</option></select></label><button class="btn btn--secondary">Загрузить</button></form>${files.map((f) => `<div class="work-item"><strong>${e(f.original_name)}</strong><p class="muted">${e(f.purpose)} · ${f.engine_file_id ? "Синхронизирован" : "Ожидает синхронизации"}</p><div class="work-row"><button class="btn btn--secondary" data-download="${e(f.id)}">Скачать</button><button class="btn btn--secondary" data-delete="${e(f.id)}">Удалить</button></div></div>`).join("")}`)}
-  ${panel(
+  </div>`;
+
+  const grid = root.querySelector(".work-grid");
+  const selected = published.find((a) => a.slug === chosen);
+  if (selected) {
+    const linkBox = document.createElement("section");
+    linkBox.className = "work-panel wide";
+    linkBox.innerHTML = `<h2>${e(selected.name)} — подключение под задачу</h2><p class="muted">Запросите доступ. После одобрения настройте задачу и создайте API-подключение. Документы можно добавить по необходимости.</p><label class="work-form">Ссылка на агента<input readonly value="${e(agentLink(selected.slug))}" aria-label="Ссылка на агента"></label><a class="btn btn--secondary" href="#application-integrations">Настроить API / LLM</a>`;
+    grid.prepend(linkBox);
+    root.querySelector("#connect [name=agent_id]").value = selected.id;
+  }
+
+  const integrationsReady = setupIntegrations(root, agents, connections, files, tell);
+  if (approved.length) renderTrialRun(grid, approved, chosen);
+  grid.insertAdjacentHTML("beforeend", `<details class="work-panel wide workspace-details" id="run-history"><summary>История запусков</summary><div id="runs" aria-live="polite"></div></details>`);
+  const history = grid.querySelector("#run-history");
+  history.addEventListener("toggle", () => {
+    if (history.open) showRuns();
+  });
+  await integrationsReady;
+}
+
+function renderTrialRun(grid, approved, chosen) {
+  grid.insertAdjacentHTML("beforeend", `<details class="work-panel wide workspace-details"><summary>Пробный запуск в кабинете</summary><div class="work-grid">${panel(
     "Запуск агента",
-    `<p class="muted">Mock-режим возвращает демонстрационные ответы. Для запуска нужно одобренное подключение.</p><form id="run" class="work-form"><label>Агент<select name="slug">${published.map((a) => `<option value="${e(a.slug)}" ${a.slug === chosen ? "selected" : ""}>${e(a.name)}</option>`).join("")}</select></label><p id="connection-status" class="muted"></p><label>Запрос<textarea name="message" required maxlength="8000"></textarea></label><label>Язык<select name="language"><option value="ru">Русский</option><option value="kk">Қазақша</option><option value="en">English</option><option value="auto">Автоматически</option></select></label><fieldset><legend>Документы для запроса</legend>${
+    `<p class="muted">Текущий движок возвращает демонстрационные ответы.</p><form id="run" class="work-form"><label>Агент<select name="slug">${approved.map((a) => `<option value="${e(a.slug)}" ${a.slug === chosen ? "selected" : ""}>${e(a.name)}</option>`).join("")}</select></label><label>Запрос<textarea name="message" required maxlength="8000"></textarea></label><label>Язык<select name="language"><option value="ru">Русский</option><option value="kk">Қазақша</option><option value="en">English</option><option value="auto">Автоматически</option></select></label><fieldset><legend>Документы для запроса</legend>${
       files
         .filter((f) => !f.deletion_requested_at)
         .map(
@@ -107,27 +131,13 @@ async function businessView() {
     }</fieldset><button class="btn btn--primary">Выполнить запрос</button></form>`,
   )}
   ${panel("Результат", '<p id="result-meta" class="muted">Текст результата не сохраняется в истории. Скопируйте его после выполнения.</p><pre id="result" class="work-output"></pre><div id="sources"></div>')}
-  ${panel("История запусков", '<div id="runs">Загрузка…</div>', true)}</div>`;
-  root.querySelector("#run [name=slug]").addEventListener("change", syncRun);
-  syncRun();
-  await showRuns();
-  await setupIntegrations(root, agents, connections, files, tell);
-  const selected = published.find(a => a.slug === chosen);
-  if (selected) {
-    const linkBox = document.createElement("section"); linkBox.className = "work-panel wide";
-    linkBox.innerHTML = `<h2>${e(selected.name)} — подключение под задачу</h2><p class="muted">1. Опишите задачу и запросите доступ. 2. После одобрения загрузите документы. 3. Запускайте агента здесь или создайте API-подключение ниже для своего приложения.</p><label class="work-form">Ссылка на агента<input readonly value="${e(agentLink(selected.slug))}" aria-label="Ссылка на агента"></label><p class="muted">Ссылку можно открыть на другом устройстве. Для доступа к задачам и документам понадобится вход в ваш аккаунт.</p><a class="btn btn--secondary" href="#application-integrations">Настроить API / LLM</a>`;
-    root.querySelector(".work-grid").prepend(linkBox);
-    root.querySelector("#connect [name=agent_id]").value = selected.id;
-  }
+  </div></details>`);
+  const form = grid.querySelector("#run");
+  form.elements.slug.addEventListener("change", () => syncRunFiles(form));
+  syncRunFiles(form);
 }
-function syncRun() {
-  const form = root.querySelector("#run");
+function syncRunFiles(form) {
   const agent = agents.find((a) => a.slug === form.elements.slug.value);
-  const connection = connections.find((c) => c.agent_id === agent?.id);
-  root.querySelector("#connection-status").textContent = connection
-    ? status(connection.status)
-    : "Агент ещё не подключён";
-  form.querySelector("button").disabled = connection?.status !== "approved";
   form.querySelectorAll("[data-purpose]").forEach((label) => {
     const allowed = agent?.accepted_file_purposes.includes(
       label.dataset.purpose,
@@ -137,14 +147,21 @@ function syncRun() {
   });
 }
 async function showRuns() {
-  const rows = await all("/runs");
-  root.querySelector("#runs").innerHTML =
+  const list = root.querySelector("#run-history[open] #runs");
+  if (!list) return;
+  list.textContent = "Загрузка…";
+  try {
+    const rows = await all("/runs");
+    list.innerHTML =
     rows
       .map(
         (r) =>
           `<div class="work-item"><strong>${e(r.engine_slug)} · ${e(status(r.status))}</strong><p class="muted">${e(new Date(r.created_at).toLocaleString())} · токены: ${r.total_tokens ?? "—"} · режим: ${e(r.mode || "—")}</p>${r.error_code ? `<p>${e(r.error_code)}</p>` : ""}</div>`,
       )
       .join("") || '<p class="muted">Запусков пока нет.</p>';
+  } catch (error) {
+    list.textContent = error.message;
+  }
 }
 async function developerView() {
   const rows = await all("/agent-submissions");
@@ -350,11 +367,10 @@ root.addEventListener("submit", async (event) => {
           : ""),
       true,
     );
-    if (form.id === "run") await showRuns().catch(() => {});
+    if (form.id === "run") await showRuns();
   } finally {
     button.disabled = false;
     button.textContent = label;
-    if (form.id === "run") syncRun();
   }
 });
 document.querySelector("#logout").addEventListener("click", async () => {
