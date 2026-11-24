@@ -1,4 +1,5 @@
 import { backendReady } from "./backend-ready.js";
+import { readSession, writeSession, withSessionLock } from "./session-store.js";
 // All requests go through Backend 2. Server secrets never belong in this app.
 export const BASE = (import.meta.env?.VITE_API_BASE || "/api").replace(
   /\/$/,
@@ -11,29 +12,11 @@ export const AGENT_DEMOS = Object.fromEntries(
     { liveDemoUrl: `/account/?agent=${SLUGS[id]}` },
   ]),
 );
-const KEY = "keme-session";
-let current = null;
-try {
-  current = JSON.parse(sessionStorage.getItem(KEY));
-} catch {
-  /* memory-only fallback */
-}
-if (!current?.session?.access_token || !current?.session?.refresh_token)
-  current = null;
 export function session() {
-  return current;
+  return readSession();
 }
 export function saveSession(value) {
-  if (value?.session && !Number.isFinite(value.session.expires_at))
-    value = { ...value, session: { ...value.session, expires_at: Date.now() / 1000 + (value.session.expires_in || 3600) } };
-  current = value;
-  try {
-    value
-      ? sessionStorage.setItem(KEY, JSON.stringify(value))
-      : sessionStorage.removeItem(KEY);
-  } catch {
-    /* memory-only */
-  }
+  return writeSession(value);
 }
 export class ApiError extends Error {
   constructor(status, data) {
@@ -44,25 +27,36 @@ export class ApiError extends Error {
   }
 }
 let refreshing;
-async function refresh() {
+async function refresh(rejectedToken = null) {
   if (!refreshing)
-    refreshing = (async () => {
+    refreshing = withSessionLock(async () => {
+      const active = session();
+      if (!active) throw new Error("Сессия завершена. Войдите снова.");
+      // Another tab may already have rotated this one-use refresh token.
+      if (rejectedToken && active.session.access_token !== rejectedToken) return;
+      if (!rejectedToken && active.session.expires_at > Date.now() / 1000 + 30) return;
+      const refreshToken = active.session.refresh_token;
       try {
         const r = await fetch(BASE + "/auth/refresh", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            refresh_token: current?.session.refresh_token,
+            refresh_token: refreshToken,
           }),
         });
         const data = await r.json();
-        if (!r.ok) throw new ApiError(r.status, data);
+        if (!r.ok) {
+          if ((r.status === 400 || r.status === 401) && session()?.session.refresh_token === refreshToken) saveSession(null);
+          throw new ApiError(r.status, data);
+        }
+        // Never restore a session after logout or replace another signed-in account.
+        if (session()?.session.refresh_token !== refreshToken) return;
         saveSession(data);
       } catch (error) {
-        saveSession(null);
+        // Temporary network/server failures do not sign the user out of this device.
         throw error;
       }
-    })().finally(() => {
+    }).finally(() => {
       refreshing = null;
     });
   return refreshing;
@@ -71,14 +65,18 @@ export async function request(
   path,
   { method = "GET", body, auth = true, binary = false } = {},
 ) {
-  if (auth && !current)
+  if (auth && !session())
     throw new ApiError(401, {
       error: { message: "Сначала войдите в кабинет.", code: "login_required" },
     });
   await backendReady(BASE);
-  if (auth && current.session.expires_at <= Date.now() / 1000 + 30)
+  if (auth && session()?.session.expires_at <= Date.now() / 1000 + 30)
     await refresh();
+  let sentToken;
   const send = () => {
+    const current = session();
+    if (auth && !current) throw new Error("Сессия завершена. Войдите снова.");
+    sentToken = current?.session.access_token;
     const headers = auth
       ? { Authorization: `Bearer ${current.session.access_token}` }
       : {};
@@ -103,7 +101,7 @@ export async function request(
   }
   // Retry reads only: a POST execution can consume quota even after a timeout.
   if (response.status === 401 && auth && method === "GET") {
-    await refresh();
+    await refresh(sentToken);
     response = await send();
   }
   if (response.status === 204) return null;
@@ -164,7 +162,7 @@ export async function submitDraft(kind, data) {
       };
     }
     location.assign(
-      `/account/?role=${kind === "dev" ? "developer" : "business"}`,
+      `/account/?intent=${kind === "dev" ? "publish" : "connect"}&role=${kind === "dev" ? "developer" : "business"}${kind === "dev" ? "&mode=signup" : ""}`,
     );
     return {
       ok: false,
@@ -173,7 +171,7 @@ export async function submitDraft(kind, data) {
   }
   try {
     if (session().profile.role !== (kind === "dev" ? "developer" : "business"))
-      throw new Error("Для этой заявки войдите с подходящей ролью.");
+      throw new Error(kind === "dev" ? "Добавление своих агентов доступно аккаунту разработчика. Подключение готовых агентов — аккаунту бизнеса." : "Для подключения готового агента войдите в аккаунт бизнеса.");
     if (kind === "dev")
       await request("/agent-submissions", {
         method: "POST",

@@ -4,7 +4,8 @@ import { createFlow } from './flow.js';
 import { createWave } from './wave.js';
 import { setupFx, splitWords, trackProgress, onScrollFx } from './fx.js';
 import { setupSmoothScroll, pauseScroll, setupNavPill, splitHeading, setupPrism, onScrollPrism } from './prism.js';
-import { submitDeveloperApplication, submitConnectionRequest } from './api.js';
+import { submitDeveloperApplication, submitConnectionRequest, session, request, saveSession } from './api.js';
+import { consumeAuthNotice } from './auth-navigation.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -56,6 +57,7 @@ function applyLang(next) {
     b.setAttribute('aria-pressed', on);
   });
   $('#catalogLink span').textContent = catalogCopy(lang).browse;
+  updateAccountLink();
   renderAreas();
   renderSelects();
   setStep(step, false);
@@ -95,6 +97,12 @@ function showToast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.classList.remove('show'), 2800);
 }
+
+function updateAccountLink() {
+  const link = $('[data-account-link]');
+  if (link) link.textContent = session() ? t('nav.account') : t('nav.login');
+}
+window.addEventListener('keme-session-changed', updateAccountLink);
 
 /* =========================================================
    1–2 Flow visuals
@@ -514,6 +522,28 @@ navPill = setupNavPill($('.nav__links'));
 setupEndingWave();
 applyLang(lang);
 const arrival = new URL(location.href);
+const authNotice = consumeAuthNotice();
+const feedback = $('#auth-feedback');
+if (authNotice) {
+  feedback.hidden = false;
+  feedback.textContent = t(authNotice === 'confirm_email' ? 'auth.confirm' : authNotice === 'registered' ? 'auth.registered' : 'auth.welcome');
+}
+try {
+  const draft = JSON.parse(sessionStorage.getItem('keme-draft'));
+  if (session() && ['dev', 'conn'].includes(draft?.kind)) {
+    feedback.hidden = false;
+    const resume = document.createElement('a');
+    resume.className = 'auth-resume';
+    resume.href = `/account/?intent=${draft.kind === 'dev' ? 'publish' : 'connect'}`;
+    resume.textContent = t(draft.kind === 'dev' ? 'action.resumePublish' : 'action.resumeConnect');
+    feedback.append(resume);
+  }
+} catch { /* A missing draft does not affect the account. */ }
+if (session()) request('/auth/me').then(profile => {
+  const current = session();
+  if (current && (!current.profile?.user_id || current.profile.user_id === profile.user_id)) saveSession({ ...current, profile });
+  updateAccountLink();
+}).catch(() => updateAccountLink());
 const requestedAgent = arrival.searchParams.get('connect');
 if (AGENT_IDS.includes(requestedAgent)) {
   openModal('conn', requestedAgent);

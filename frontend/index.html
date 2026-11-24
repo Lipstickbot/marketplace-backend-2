@@ -42,13 +42,14 @@
         <span class="logo__word">Keme <b>AI</b></span>
       </span>
       <nav class="nav__links landing-links" aria-label="Main" lang="en">
-        <a href="#top" class="is-current" aria-current="page">Home</a>
-        <a href="/catalog/">Agents</a>
-      <a href="/account/">Кабинет</a></nav>
+        <a href="#top" class="is-current" aria-current="page" data-i18n="nav.home">Главная</a>
+        <a href="/catalog/" data-i18n="nav.agents">Агенты</a>
+      <a href="/account/" data-account-link>Войти</a></nav>
     </div>
   </header>
 
   <main>
+    <div class="container auth-feedback" id="auth-feedback" role="status" hidden></div>
     <!-- ============ 1–2: HERO + RESULT (one scene) ============ -->
     <div class="scene" id="scene">
       <div class="ambient" aria-hidden="true"><i class="orb orb--a" data-parallax="-0.12"></i><i class="orb orb--b" data-parallax="0.08"></i><i class="orb orb--c" data-parallax="-0.05"></i></div>
@@ -58,6 +59,10 @@
       <div class="container scene__grid">
         <section class="hero" id="top">
           <h1 class="display hero__title" data-reveal data-i18n-html="hero.title">ИИ-агенты<br>Для Вашего <em>Бизнеса</em></h1>
+          <div class="hero-actions">
+            <button type="button" class="btn btn--primary" data-open="conn" data-i18n="action.connect">Подключить агента</button>
+            <button type="button" class="btn btn--secondary" data-open="dev" data-i18n="action.publish">Добавить своего агента</button>
+          </div>
           <div class="hero__sea" data-sea-anchor aria-hidden="true"></div>
         </section>
         <div class="scene__text">

@@ -9,6 +9,7 @@ import {
   submitDraft,
 } from "./api.js";
 import { startGoogleLogin, finishGoogleLogin } from "./google-auth.js";
+import { goHomeAfterAuth } from "./auth-navigation.js";
 const root = document.querySelector("#workspace"),
   notice = document.querySelector("#notice");
 const e = (v) =>
@@ -36,7 +37,8 @@ const panel = (title, body, wide = false) =>
 let agents = [],
   files = [],
   connections = [],
-  authMode = "login";
+  authMode = new URLSearchParams(location.search).get("mode") === "signup" ? "signup" : "login";
+const intent = new URLSearchParams(location.search).get("intent");
 let googleAvailable = null;
 function tell(text = "", error = false) {
   notice.textContent = text;
@@ -45,9 +47,12 @@ function tell(text = "", error = false) {
 function authView() {
   const registering = authMode === "signup";
   root.innerHTML = panel(
-    "Вход в Keme AI",
-    `<div class="work-tabs"><button class="btn btn--secondary" data-auth="login">Войти</button><button class="btn btn--secondary" data-auth="signup">Создать аккаунт</button></div><form id="auth" class="work-form"><label>Почта<input name="email" type="email" autocomplete="email" required maxlength="254"></label><label>Пароль<input name="password" type="password" autocomplete="${registering ? "new-password" : "current-password"}" required minlength="${registering ? 12 : 1}" maxlength="128"></label>${registering ? '<label>Ваше имя<input name="display_name" maxlength="120"></label><label>Компания<input name="company_name" maxlength="200"></label><label>Роль<select name="role"><option value="business">Бизнес</option><option value="developer">Разработчик</option></select></label><p class="muted">Пароль от 12 символов. После подтверждения почты вернитесь и войдите.</p>' : ""}<button class="btn btn--primary">${registering ? "Зарегистрироваться" : "Войти"}</button></form>`,
+    intent === "publish" ? "Аккаунт разработчика" : intent === "connect" ? "Подключить агента для бизнеса" : "Вход в Keme AI",
+    `<div class="work-tabs"><button class="btn btn--secondary" data-auth="login">Войти</button><button class="btn btn--secondary" data-auth="signup">Создать аккаунт</button></div><form id="auth" class="work-form"><label>Почта<input name="email" type="email" autocomplete="email" required maxlength="254"></label><label>Пароль<input name="password" type="password" autocomplete="${registering ? "new-password" : "current-password"}" required minlength="${registering ? 12 : 1}" maxlength="128"></label>${registering ? '<label>Ваше имя<input name="display_name" maxlength="120"></label><label>Компания<input name="company_name" maxlength="200"></label><label>Роль<select name="role"><option value="business">Подключать агентов для бизнеса</option><option value="developer">Добавлять своих агентов</option></select></label><p class="muted">Пароль от 12 символов. После подтверждения почты вернитесь и войдите.</p>' : ""}<button class="btn btn--primary">${registering ? "Зарегистрироваться" : "Войти"}</button></form>`,
   );
+  const purpose = document.createElement("p"); purpose.className = "muted";
+  purpose.textContent = intent === "publish" ? "Добавьте собственного агента в каталог: опишите возможности и отправьте заявку на рассмотрение." : intent === "connect" ? "Выберите готового агента из каталога и отправьте запрос на подключение для своей компании." : "Вход сохранится на этом устройстве, пока вы не нажмёте «Выйти».";
+  root.querySelector(".work-panel").prepend(purpose);
   if (registering)
     root.querySelector("[name=role]").value =
       new URLSearchParams(location.search).get("role") === "developer"
@@ -58,12 +63,18 @@ function authView() {
   google.innerHTML = `<div class="auth-divider"><span>или</span></div><button type="button" class="btn btn--secondary google-button" id="google-login"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.39-.18-2.05H12v3.88h5.38a4.6 4.6 0 0 1-2 3.02v2.51h3.24c1.9-1.75 2.98-4.33 2.98-7.36Z"/><path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.62-2.41l-3.24-2.51c-.9.6-2.04.97-3.38.97-2.6 0-4.81-1.76-5.6-4.12H3.06v2.59A10 10 0 0 0 12 22Z"/><path fill="#FBBC05" d="M6.4 13.93A6 6 0 0 1 6.09 12c0-.67.12-1.32.31-1.93V7.48H3.06A10 10 0 0 0 2 12c0 1.61.39 3.14 1.06 4.52l3.34-2.59Z"/><path fill="#EA4335" d="M12 5.95c1.47 0 2.78.51 3.82 1.51l2.86-2.87A9.6 9.6 0 0 0 12 2a10 10 0 0 0-8.94 5.48l3.34 2.59c.79-2.36 3-4.12 5.6-4.12Z"/></svg>Продолжить с Google</button><p class="muted google-note">Новый аккаунт Google создаётся с ролью «Бизнес».</p><p class="muted" id="google-status"></p>`;
   root.querySelector(".work-panel").append(google);
   const button = google.querySelector("button"), status = google.querySelector("#google-status");
-  button.disabled = googleAvailable !== true;
+  const updateGoogle = () => {
+    const developerSignup = registering && root.querySelector("[name=role]")?.value === "developer";
+    button.disabled = googleAvailable !== true || developerSignup;
+    google.querySelector(".google-note").textContent = developerSignup ? "Для создания аккаунта разработчика зарегистрируйтесь по почте. В существующий аккаунт можно войти через Google." : "Новый аккаунт Google создаётся для подключения агентов бизнесом.";
+  };
+  updateGoogle();
+  root.querySelector("[name=role]")?.addEventListener("change", updateGoogle);
   status.textContent = googleAvailable === false ? "Вход через Google скоро будет доступен. Можно войти по почте." : googleAvailable === null ? "Проверяем доступность Google…" : "";
   request("/auth/providers", { auth: false }).then((providers) => {
     googleAvailable = providers.google === true;
     if (!button.isConnected) return;
-    button.disabled = !googleAvailable;
+    updateGoogle();
     status.textContent = googleAvailable ? "" : "Вход через Google скоро будет доступен. Можно войти по почте.";
   }).catch(() => {
     if (button.isConnected) status.textContent = "Не удалось проверить Google. Попробуйте обновить страницу.";
@@ -80,7 +91,7 @@ async function businessView() {
   const options = published
     .map((a) => `<option value="${e(a.id)}">${e(a.name)}</option>`)
     .join("");
-  root.innerHTML = `<div class="work-grid">${panel("Подключения", `<form id="connect" class="work-form"><label>Агент<select name="agent_id">${options}</select></label><label>Задача<textarea name="message" maxlength="4000"></textarea></label><button class="btn btn--primary">Запросить подключение</button></form>${connections.map((c) => `<div class="work-item"><strong>${e(agents.find((a) => a.id === c.agent_id)?.name || c.agent_id)}</strong><p>${e(status(c.status))}</p><p>${e(c.review_note || "")}</p></div>`).join("")}`)}
+  root.innerHTML = `<div class="work-grid">${panel("Подключить готового агента", `<p class="muted">Выберите агента из каталога для работы в вашей компании. Эта заявка не публикует нового агента.</p><form id="connect" class="work-form"><label>Агент<select name="agent_id">${options}</select></label><label>Задача<textarea name="message" maxlength="4000"></textarea></label><button class="btn btn--primary">Запросить подключение</button></form>${connections.map((c) => `<div class="work-item"><strong>${e(agents.find((a) => a.id === c.agent_id)?.name || c.agent_id)}</strong><p>${e(status(c.status))}</p><p>${e(c.review_note || "")}</p></div>`).join("")}`)}
   ${panel("Документы", `<p class="muted">PDF, DOCX или TXT до 10 MiB. Для проверки используйте вымышленные данные.</p><form id="upload" class="work-form"><label>Файл<input name="file" type="file" accept=".pdf,.docx,.txt" required></label><label>Назначение<select name="purpose"><option value="brief">Бриф Marketing</option><option value="knowledge_base">База знаний Support</option><option value="resume">Резюме HR</option><option value="job_description">Вакансия HR</option></select></label><button class="btn btn--secondary">Загрузить</button></form>${files.map((f) => `<div class="work-item"><strong>${e(f.original_name)}</strong><p class="muted">${e(f.purpose)} · ${f.engine_file_id ? "Синхронизирован" : "Ожидает синхронизации"}</p><div class="work-row"><button class="btn btn--secondary" data-download="${e(f.id)}">Скачать</button><button class="btn btn--secondary" data-delete="${e(f.id)}">Удалить</button></div></div>`).join("")}`)}
   ${panel(
     "Запуск агента",
@@ -128,7 +139,7 @@ async function showRuns() {
 }
 async function developerView() {
   const rows = await all("/agent-submissions");
-  root.innerHTML = `<div class="work-grid">${panel("Предложить агента", '<form id="submission" class="work-form"><label>Название<input name="name" required maxlength="160"></label><label>Категория<input name="category" required maxlength="80"></label><label>Описание и ограничения<textarea name="description" required maxlength="10000"></textarea></label><label>Репозиторий HTTPS<input name="repository_url" type="url" placeholder="https://github.com/…"></label><button class="btn btn--primary">Отправить</button></form>')}${panel("Мои заявки", rows.map((r) => `<div class="work-item"><h3>${e(r.name)}</h3><p>${e(status(r.status))}</p><p>${e(r.review_note || "")}</p></div>`).join("") || "<p>Заявок пока нет.</p>")}</div>`;
+  root.innerHTML = `<div class="work-grid">${panel("Добавить своего агента", '<p class="muted">Опишите собственного агента для публикации в каталоге. Подключение готового агента оформляется отдельно в аккаунте бизнеса.</p><form id="submission" class="work-form"><label>Название<input name="name" required maxlength="160"></label><label>Категория<input name="category" required maxlength="80"></label><label>Описание и ограничения<textarea name="description" required maxlength="10000"></textarea></label><label>Репозиторий HTTPS<input name="repository_url" type="url" placeholder="https://github.com/…"></label><button class="btn btn--primary">Отправить</button></form>')}${panel("Мои заявки", rows.map((r) => `<div class="work-item"><h3>${e(r.name)}</h3><p>${e(status(r.status))}</p><p>${e(r.review_note || "")}</p></div>`).join("") || "<p>Заявок пока нет.</p>")}</div>`;
 }
 async function adminView() {
   const [connects, submissions] = await Promise.all([
@@ -150,7 +161,7 @@ function draftView() {
   root.insertAdjacentHTML(
     "afterbegin",
     panel(
-      "Сохранённая заявка",
+      draft.kind === "dev" ? "Заявка на добавление своего агента" : "Заявка на подключение агента",
       `<p>${e(draft.kind === "dev" ? draft.data.agentName : draft.data.need)}</p><button class="btn btn--primary" id="send-draft">Подтвердить отправку</button>`,
     ),
   );
@@ -235,16 +246,19 @@ root.addEventListener("submit", async (event) => {
   tell();
   try {
     if (form.id === "auth") {
-      if (authMode === "login") await login(value);
+      if (authMode === "login") {
+        await login(value);
+        goHomeAfterAuth("signed_in"); return;
+      }
       else {
         const result = await signup(value);
         if (result.status === "confirmation_required") {
           form.reset();
-          tell("Проверьте почту и подтвердите регистрацию. Затем войдите.");
+          goHomeAfterAuth("confirm_email");
           return;
         }
       }
-      await render();
+      goHomeAfterAuth("registered"); return;
     } else if (form.id === "connect") {
       await request("/connect-requests", { method: "POST", body: value });
       tell("Заявка отправлена.");
@@ -335,11 +349,15 @@ document.querySelector("#logout").addEventListener("click", async () => {
   }
 });
 async function initialize() {
-  try { if (await finishGoogleLogin()) tell("Вы вошли через Google."); }
+  try { if (await finishGoogleLogin()) { goHomeAfterAuth("signed_in"); return; } }
   catch (error) { tell(error.message, true); }
   await render();
 }
 initialize().catch((error) => {
   tell(error.message, true);
   if (!session()) authView();
+});
+window.addEventListener("keme-session-changed", () => {
+  root.innerHTML = "";
+  render().catch((error) => { tell(error.message, true); if (!session()) authView(); });
 });

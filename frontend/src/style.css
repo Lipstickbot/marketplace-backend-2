@@ -1056,3 +1056,8 @@ html.lenis, html.lenis body { height: auto; }
   background: #f7fbff; color: #183851; box-shadow: 0 8px 30px #18385126;
   font: 16px/1.5 system-ui, sans-serif;
 }
+.hero-actions { position: relative; z-index: 3; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-top: 28px; }
+.hero-actions .btn { font-size: 16px; min-height: 48px; }
+.auth-feedback { position: relative; z-index: 4; margin-top: 100px; padding: 18px 24px; background: #e7f4ff; border: 1px solid #b3d1ed; border-radius: 16px; font-size: 17px; line-height: 1.6; }
+.auth-resume { display: block; margin-top: 8px; color: #1656d8; font-weight: 600; text-decoration: underline; }
+@media (max-width: 600px) { .hero-actions { gap: 10px; } .hero-actions .btn { width: 100%; } }
