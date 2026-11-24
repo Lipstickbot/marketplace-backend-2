@@ -12,6 +12,9 @@ class Settings(BaseModel):
     supabase_url: str
     supabase_publishable_key: SecretStr
     cors_origins: tuple[str, ...] = ("http://localhost:3000",)
+    oauth_redirect_origins: tuple[str, ...] = (
+        "http://localhost:3000", "http://127.0.0.1:8001", "https://keme-ai-platform.onrender.com",
+    )
     auth_timeout_seconds: float = Field(default=15, gt=0, le=60)
     auth_requests_per_minute: int = Field(default=10, ge=1, le=1000)
     supabase_secret_key: SecretStr | None = None
@@ -56,7 +59,7 @@ class Settings(BaseModel):
             raise ValueError("Use a current Supabase publishable key")
         return value
 
-    @field_validator("cors_origins")
+    @field_validator("cors_origins", "oauth_redirect_origins")
     @classmethod
     def validate_origins(cls, origins: tuple[str, ...]) -> tuple[str, ...]:
         for origin in origins:
@@ -74,6 +77,7 @@ class Settings(BaseModel):
             supabase_url=values.get("SUPABASE_URL", ""),
             supabase_publishable_key=values.get("SUPABASE_PUBLISHABLE_KEY", ""),
             cors_origins=tuple(x.strip() for x in values.get("CORS_ORIGINS", "http://localhost:3000").split(",") if x.strip()),
+            oauth_redirect_origins=tuple(x.strip() for x in values.get("OAUTH_REDIRECT_ORIGINS", "http://localhost:3000,http://127.0.0.1:8001,https://keme-ai-platform.onrender.com").split(",") if x.strip()),
             auth_timeout_seconds=values.get("AUTH_TIMEOUT_SECONDS", "15"),
             auth_requests_per_minute=values.get("AUTH_REQUESTS_PER_MINUTE", "10"),
             supabase_secret_key=values.get("SUPABASE_SECRET_KEY") or None,

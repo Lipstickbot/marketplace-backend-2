@@ -62,6 +62,8 @@ class SupabaseGateway:
                 raise unauthorized("invalid_credentials")
             if operation == "refresh":
                 raise unauthorized("invalid_refresh_token")
+            if operation == "oauth":
+                raise APIError(400, "google_login_failed", "Не удалось завершить вход через Google. Начните вход ещё раз.")
             if operation == "signup":
                 if code == "user_already_exists":
                     return {}  # Preserve signup anti-enumeration semantics.

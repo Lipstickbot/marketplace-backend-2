@@ -11,6 +11,7 @@ from backend.app.auth import require_roles
 from backend.app.config import Settings
 from backend.app.main import create_app
 from backend.app.models import Principal
+from starlette.routing import Mount
 
 A = "00000000-0000-4000-8000-000000000001"
 D = "00000000-0000-4000-8000-000000000002"
@@ -81,6 +82,10 @@ def environment():
     @app.get("/test/business")
     async def business(user: Annotated[Principal, Depends(require_roles("business"))]):
         return {"id": str(user.company_id)}
+
+    # The production static site is mounted last. Test-only routes added afterwards
+    # must precede that catch-all when frontend/dist exists on the developer machine.
+    app.router.routes.sort(key=lambda route: isinstance(route, Mount))
 
     with TestClient(app) as client:
         yield client, remote

@@ -1,3 +1,4 @@
+import { backendReady } from "./backend-ready.js";
 // All requests go through Backend 2. Server secrets never belong in this app.
 export const BASE = (import.meta.env?.VITE_API_BASE || "/api").replace(
   /\/$/,
@@ -23,6 +24,8 @@ export function session() {
   return current;
 }
 export function saveSession(value) {
+  if (value?.session && !Number.isFinite(value.session.expires_at))
+    value = { ...value, session: { ...value.session, expires_at: Date.now() / 1000 + (value.session.expires_in || 3600) } };
   current = value;
   try {
     value
@@ -72,6 +75,7 @@ export async function request(
     throw new ApiError(401, {
       error: { message: "Сначала войдите в кабинет.", code: "login_required" },
     });
+  await backendReady(BASE);
   if (auth && current.session.expires_at <= Date.now() / 1000 + 30)
     await refresh();
   const send = () => {
@@ -199,3 +203,16 @@ export async function submitDraft(kind, data) {
 }
 export const submitDeveloperApplication = (data) => submitDraft("dev", data);
 export const submitConnectionRequest = (data) => submitDraft("conn", data);
+
+if (typeof document !== "undefined") {
+  document.addEventListener("keme-connection", (event) => {
+    let banner = document.getElementById("connection-message");
+    if (!banner) {
+      banner = document.createElement("p"); banner.id = "connection-message";
+      banner.className = "connection-message"; banner.setAttribute("role", "status");
+      banner.textContent = "Подключаем сервис… Первое подключение может занять около минуты.";
+      document.body.append(banner);
+    }
+    banner.hidden = !event.detail.waiting;
+  });
+}

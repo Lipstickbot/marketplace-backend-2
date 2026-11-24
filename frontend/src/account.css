@@ -119,6 +119,10 @@
   opacity: 0.55;
   cursor: wait;
 }
+.auth-divider { display: flex; align-items: center; gap: 16px; color: #65798d; margin: 24px 0; }
+.auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: #d8e3ed; }
+.google-button { display: flex; width: 100%; justify-content: center; align-items: center; gap: 12px; background: #fff; }
+.google-note { margin-top: 12px; }
 @media (max-width: 720px) {
   .work-grid {
     grid-template-columns: 1fr;

@@ -32,6 +32,24 @@ class RefreshInput(InputModel):
     refresh_token: SecretStr = Field(min_length=1, max_length=8192)
 
 
+class GoogleStartInput(InputModel):
+    code_challenge: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
+    redirect_to: str = Field(min_length=1, max_length=2048)
+
+
+class GoogleExchangeInput(InputModel):
+    auth_code: SecretStr = Field(min_length=1, max_length=2048)
+    code_verifier: SecretStr = Field(min_length=43, max_length=128)
+
+    @field_validator("code_verifier")
+    @classmethod
+    def validate_verifier(cls, value: SecretStr) -> SecretStr:
+        import re
+        if not re.fullmatch(r"[A-Za-z0-9._~-]{43,128}", value.get_secret_value()):
+            raise ValueError("Invalid PKCE verifier")
+        return value
+
+
 class ProfilePatch(InputModel):
     display_name: str | None = Field(default=None, max_length=120)
     company_name: str | None = Field(default=None, max_length=200)

@@ -5,6 +5,8 @@ import time
 from typing import Annotated
 from pathlib import Path
 from uuid import uuid4
+from urllib.parse import urlsplit, parse_qs, urlencode
+import re
 
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from fastapi.routing import APIRoute
@@ -17,7 +19,7 @@ import httpx
 from .auth import current_token, current_user, gateway
 from .config import Settings
 from .errors import APIError
-from .models import LoginInput, Principal, ProfilePatch, RefreshInput, SessionResponse, SignupInput, SignupResponse
+from .models import GoogleStartInput, GoogleExchangeInput, LoginInput, Principal, ProfilePatch, RefreshInput, SessionResponse, SignupInput, SignupResponse
 from .supabase import SupabaseGateway
 from .marketplace import router as marketplace_router
 from .execution import router as execution_router
@@ -60,7 +62,7 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
             app.state.engine_client = EngineClient(settings, engine_http)
             yield
 
-    app = FastAPI(title="Marketplace Backend 2", version="0.5.0", lifespan=lifespan)
+    app = FastAPI(title="Marketplace Backend 2", version="0.6.0", lifespan=lifespan)
     app.include_router(marketplace_router)
     app.include_router(execution_router)
     app.add_middleware(BodySizeLimit)
@@ -97,9 +99,47 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
     async def limit_auth(request: Request):
         app.state.auth_limiter.check(request.client.host if request.client else "unknown")
 
+    google_status: dict = {"checked_at": 0.0, "enabled": False}
+
+    async def google_enabled(client: SupabaseGateway) -> bool:
+        if time.monotonic() - google_status["checked_at"] > 30:
+            result = await client.request("GET", "/auth/v1/settings")
+            google_status.update(checked_at=time.monotonic(), enabled=(
+                isinstance(result, dict) and result.get("external", {}).get("google") is True
+            ))
+        return google_status["enabled"]
+
+    @app.get("/auth/providers", tags=["Auth"])
+    async def providers(client: Annotated[SupabaseGateway, Depends(gateway)]):
+        return {"google": await google_enabled(client)}
+
+    @app.post("/auth/google/start", tags=["Auth"], dependencies=[Depends(limit_auth)])
+    async def google_start(body: GoogleStartInput, client: Annotated[SupabaseGateway, Depends(gateway)]):
+        redirect = urlsplit(body.redirect_to)
+        origin = f"{redirect.scheme}://{redirect.netloc}"
+        params = parse_qs(redirect.query, keep_blank_values=True)
+        state = params.get("oauth_state", [])
+        if (origin not in settings.oauth_redirect_origins or redirect.username or redirect.password
+                or redirect.path != "/account/" or redirect.fragment or set(params) != {"oauth_state"}
+                or len(state) != 1 or not re.fullmatch(r"[A-Za-z0-9_-]{43}", state[0])):
+            raise APIError(422, "invalid_redirect", "Адрес возврата после входа не разрешён.")
+        if not await google_enabled(client):
+            raise APIError(503, "google_not_configured", "Вход через Google пока настраивается. Используйте почту и пароль.")
+        query = urlencode({"provider": "google", "redirect_to": body.redirect_to,
+                           "code_challenge": body.code_challenge, "code_challenge_method": "s256",
+                           "scopes": "openid email profile", "prompt": "select_account"})
+        return {"url": settings.supabase_url + "/auth/v1/authorize?" + query}
+
+    @app.post("/auth/google/exchange", response_model=SessionResponse, tags=["Auth"], dependencies=[Depends(limit_auth)])
+    async def google_exchange(body: GoogleExchangeInput, client: Annotated[SupabaseGateway, Depends(gateway)]):
+        result = await client.request("POST", "/auth/v1/token", params={"grant_type": "pkce"}, operation="oauth",
+                                      body={"auth_code": body.auth_code.get_secret_value(),
+                                            "code_verifier": body.code_verifier.get_secret_value()})
+        return await client.session_response(result)
+
     @app.get("/health", tags=["Monitoring"])
     async def health():
-        return {"status": "ok", "service": "marketplace-backend-2", "version": "0.5.0"}
+        return {"status": "ok", "service": "marketplace-backend-2", "version": "0.6.0"}
 
     @app.post("/auth/signup", response_model=SignupResponse, status_code=201, tags=["Auth"], dependencies=[Depends(limit_auth)])
     async def signup(body: SignupInput, client: Annotated[SupabaseGateway, Depends(gateway)]):

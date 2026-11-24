@@ -8,6 +8,7 @@ import {
   logout,
   submitDraft,
 } from "./api.js";
+import { startGoogleLogin, finishGoogleLogin } from "./google-auth.js";
 const root = document.querySelector("#workspace"),
   notice = document.querySelector("#notice");
 const e = (v) =>
@@ -36,6 +37,7 @@ let agents = [],
   files = [],
   connections = [],
   authMode = "login";
+let googleAvailable = null;
 function tell(text = "", error = false) {
   notice.textContent = text;
   notice.classList.toggle("error", error);
@@ -51,6 +53,21 @@ function authView() {
       new URLSearchParams(location.search).get("role") === "developer"
         ? "developer"
         : "business";
+  const google = document.createElement("div");
+  google.className = "google-signin";
+  google.innerHTML = `<div class="auth-divider"><span>или</span></div><button type="button" class="btn btn--secondary google-button" id="google-login"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.39-.18-2.05H12v3.88h5.38a4.6 4.6 0 0 1-2 3.02v2.51h3.24c1.9-1.75 2.98-4.33 2.98-7.36Z"/><path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.62-2.41l-3.24-2.51c-.9.6-2.04.97-3.38.97-2.6 0-4.81-1.76-5.6-4.12H3.06v2.59A10 10 0 0 0 12 22Z"/><path fill="#FBBC05" d="M6.4 13.93A6 6 0 0 1 6.09 12c0-.67.12-1.32.31-1.93V7.48H3.06A10 10 0 0 0 2 12c0 1.61.39 3.14 1.06 4.52l3.34-2.59Z"/><path fill="#EA4335" d="M12 5.95c1.47 0 2.78.51 3.82 1.51l2.86-2.87A9.6 9.6 0 0 0 12 2a10 10 0 0 0-8.94 5.48l3.34 2.59c.79-2.36 3-4.12 5.6-4.12Z"/></svg>Продолжить с Google</button><p class="muted google-note">Новый аккаунт Google создаётся с ролью «Бизнес».</p><p class="muted" id="google-status"></p>`;
+  root.querySelector(".work-panel").append(google);
+  const button = google.querySelector("button"), status = google.querySelector("#google-status");
+  button.disabled = googleAvailable !== true;
+  status.textContent = googleAvailable === false ? "Вход через Google скоро будет доступен. Можно войти по почте." : googleAvailable === null ? "Проверяем доступность Google…" : "";
+  request("/auth/providers", { auth: false }).then((providers) => {
+    googleAvailable = providers.google === true;
+    if (!button.isConnected) return;
+    button.disabled = !googleAvailable;
+    status.textContent = googleAvailable ? "" : "Вход через Google скоро будет доступен. Можно войти по почте.";
+  }).catch(() => {
+    if (button.isConnected) status.textContent = "Не удалось проверить Google. Попробуйте обновить страницу.";
+  });
 }
 async function businessView() {
   [agents, connections, files] = await Promise.all([
@@ -168,6 +185,13 @@ async function render() {
 root.addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button) return;
+  if (button.id === "google-login") {
+    button.disabled = true;
+    tell("Открываем Google…");
+    try { await startGoogleLogin(); }
+    catch (error) { tell(error.message, true); button.disabled = false; }
+    return;
+  }
   if (button.dataset.auth) {
     authMode = button.dataset.auth;
     tell();
@@ -310,7 +334,12 @@ document.querySelector("#logout").addEventListener("click", async () => {
     await render();
   }
 });
-render().catch((error) => {
+async function initialize() {
+  try { if (await finishGoogleLogin()) tell("Вы вошли через Google."); }
+  catch (error) { tell(error.message, true); }
+  await render();
+}
+initialize().catch((error) => {
   tell(error.message, true);
   if (!session()) authView();
 });

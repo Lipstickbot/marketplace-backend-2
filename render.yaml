@@ -33,4 +33,29 @@ services:
       - key: ENGINE_TIMEOUT_SECONDS
         value: "180"
       - key: CORS_ORIGINS
-        value: ""
+        value: https://keme-ai.onrender.com
+      - key: OAUTH_REDIRECT_ORIGINS
+        value: https://keme-ai.onrender.com,https://keme-ai-platform.onrender.com,http://localhost:3000,http://127.0.0.1:8001
+  - type: web
+    name: keme-ai
+    runtime: static
+    branch: main
+    rootDir: frontend
+    buildCommand: npm ci --no-audit --no-fund && npm run build
+    staticPublishPath: dist
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: VITE_API_BASE
+        value: https://keme-ai-platform.onrender.com/api
+      - key: SKIP_INSTALL_DEPS
+        value: "true"
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /account/*
+        name: Referrer-Policy
+        value: no-referrer
+      - path: /account/*
+        name: Cache-Control
+        value: no-store
