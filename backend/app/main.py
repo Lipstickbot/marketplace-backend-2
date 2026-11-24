@@ -19,7 +19,7 @@ import httpx
 from .auth import current_token, current_user, gateway
 from .config import Settings
 from .errors import APIError
-from .models import GoogleStartInput, GoogleExchangeInput, LoginInput, Principal, ProfilePatch, RefreshInput, SessionResponse, SignupInput, SignupResponse
+from .models import ConfirmationCode, ConfirmationEmail, GoogleStartInput, GoogleExchangeInput, LoginInput, Principal, ProfilePatch, RefreshInput, SessionResponse, SignupInput, SignupResponse
 from .supabase import SupabaseGateway
 from .marketplace import router as marketplace_router
 from .execution import router as execution_router
@@ -143,18 +143,38 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
     async def health():
         return {"status": "ok", "service": "marketplace-backend-2", "version": "0.7.0"}
 
+    def confirmation_redirect(request: Request) -> dict[str, str] | None:
+        origin = request.headers.get("origin")
+        if origin in settings.oauth_redirect_origins:
+            return {"redirect_to": f"{origin}/account/?email_confirmation=1"}
+        return None
+
     @app.post("/auth/signup", response_model=SignupResponse, status_code=201, tags=["Auth"], dependencies=[Depends(limit_auth)])
-    async def signup(body: SignupInput, client: Annotated[SupabaseGateway, Depends(gateway)]):
+    async def signup(body: SignupInput, request: Request, client: Annotated[SupabaseGateway, Depends(gateway)]):
         payload = {"email": str(body.email), "password": body.password.get_secret_value(),
                    "data": {"role": body.role, "display_name": body.display_name, "company_name": body.company_name}}
         if body.captcha_token:
             payload["gotrue_meta_security"] = {"captcha_token": body.captcha_token.get_secret_value()}
-        result = await client.request("POST", "/auth/v1/signup", body=payload, operation="signup")
+        result = await client.request("POST", "/auth/v1/signup", body=payload, params=confirmation_redirect(request), operation="signup")
         if isinstance(result, dict) and result.get("access_token"):
             return SignupResponse(status="signed_in", session=await client.session_response(result))
         if not isinstance(result, dict):
             raise APIError(502, "supabase_contract_error", "Некорректный ответ сервиса авторизации.")
         return SignupResponse(status="confirmation_required")
+
+    @app.post("/auth/email/resend", status_code=204, tags=["Auth"], dependencies=[Depends(limit_auth)])
+    async def resend_email(body: ConfirmationEmail, request: Request, client: Annotated[SupabaseGateway, Depends(gateway)]):
+        payload = {"email": str(body.email), "type": "signup"}
+        if body.captcha_token:
+            payload["gotrue_meta_security"] = {"captcha_token": body.captcha_token.get_secret_value()}
+        await client.request("POST", "/auth/v1/resend", body=payload, params=confirmation_redirect(request), operation="resend")
+        return Response(status_code=204)
+
+    @app.post("/auth/email/verify", response_model=SessionResponse, tags=["Auth"], dependencies=[Depends(limit_auth)])
+    async def verify_email(body: ConfirmationCode, client: Annotated[SupabaseGateway, Depends(gateway)]):
+        result = await client.request("POST", "/auth/v1/verify", operation="verify_email",
+                                      body={"email": str(body.email), "token": body.code.get_secret_value(), "type": "signup"})
+        return await client.session_response(result)
 
     @app.post("/auth/login", response_model=SessionResponse, tags=["Auth"], dependencies=[Depends(limit_auth)])
     async def login(body: LoginInput, client: Annotated[SupabaseGateway, Depends(gateway)]):

@@ -6,10 +6,13 @@
     <meta name="referrer" content="no-referrer" />
     <title>Кабинет — Keme AI</title>
     <link rel="icon" href="/brand/keme-logo.webp" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/src/style.css" />
     <link rel="stylesheet" href="/src/account.css" />
   </head>
-  <body class="directory-page">
+  <body class="directory-page account-page">
     <header class="nav is-scrolled">
       <div class="nav__inner">
         <a class="logo" href="/"
@@ -23,17 +26,16 @@
         >
         <nav class="directory-nav">
           <a href="/">Главная</a><a href="/catalog/">Каталог</a
-          ><a href="/account/">Кабинет</a>
+          ><a href="/account/" class="is-current" aria-current="page">Кабинет</a>
         </nav>
       </div>
     </header>
     <main class="container workspace">
       <header class="workspace-head">
         <div>
-          <span class="pill">Keme AI</span>
           <h1 class="display">Рабочий кабинет</h1>
           <p id="identity" class="lead">
-            Агенты, документы и результаты в одном месте.
+            Подключайте агентов и управляйте доступом к ним.
           </p>
         </div>
         <button id="logout" class="btn btn--secondary" hidden>Выйти</button>

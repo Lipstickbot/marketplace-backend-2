@@ -35,25 +35,75 @@ const labels = {
 const status = (v) => labels[v] || v;
 const panel = (title, body, wide = false) =>
   `<section class="work-panel ${wide ? "wide" : ""}"><h2>${title}</h2>${body}</section>`;
+const accountUrl = new URL(location.href);
+const returningFromConfirmation = accountUrl.searchParams.get("email_confirmation") === "1";
+const confirmationFailed = returningFromConfirmation && new URLSearchParams(accountUrl.hash.slice(1)).has("error");
+if (returningFromConfirmation) {
+  accountUrl.searchParams.delete("email_confirmation");
+  accountUrl.hash = "";
+  history.replaceState(null, "", accountUrl.pathname + accountUrl.search);
+}
+const confirmationEmailKey = "keme-confirmation-email";
+let confirmationEmail = "";
+try { confirmationEmail = sessionStorage.getItem(confirmationEmailKey) || ""; } catch { /* Storage is optional. */ }
+
 let agents = [],
   files = [],
   connections = [],
-  authMode = new URLSearchParams(location.search).get("mode") === "signup" ? "signup" : "login";
+  authMode = accountUrl.searchParams.get("mode") === "signup" ? "signup" : "login";
+if (accountUrl.searchParams.get("mode") === "confirm" || confirmationFailed) authMode = "confirm";
 const intent = new URLSearchParams(location.search).get("intent");
 let googleAvailable = null;
 function tell(text = "", error = false) {
   notice.textContent = text;
   notice.classList.toggle("error", error);
 }
+function rememberConfirmationEmail(email) {
+  confirmationEmail = email;
+  try {
+    if (email) sessionStorage.setItem(confirmationEmailKey, email);
+    else sessionStorage.removeItem(confirmationEmailKey);
+  } catch { /* Storage is optional. */ }
+}
+
+function confirmationView() {
+  root.innerHTML = panel("Подтвердите почту", `
+    <p class="muted">Откройте ссылку из письма или введите код, если он указан. Если письмо не пришло, проверьте спам и запросите его ещё раз.</p>
+    <form id="confirm-email" class="work-form">
+      <label>Почта<input name="email" type="email" autocomplete="email" value="${e(confirmationEmail)}" maxlength="254" required></label>
+      <label>Код из письма<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required></label>
+      <div class="work-row">
+        <button type="submit" class="btn btn--primary">Подтвердить</button>
+        <button type="submit" value="resend" formnovalidate class="btn btn--secondary">Отправить письмо ещё раз</button>
+      </div>
+    </form>
+    <button type="button" class="auth-text-button" data-auth="login">Вернуться ко входу</button>
+  `);
+}
+
 function authView() {
+  root.classList.add("auth-layout");
+  if (authMode === "confirm") {
+    confirmationView();
+    return;
+  }
   const registering = authMode === "signup";
   root.innerHTML = panel(
-    intent === "publish" ? "Аккаунт разработчика" : intent === "connect" ? "Подключить агента для бизнеса" : "Вход в Keme AI",
-    `<div class="work-tabs"><button class="btn btn--secondary" data-auth="login">Войти</button><button class="btn btn--secondary" data-auth="signup">Создать аккаунт</button></div><form id="auth" class="work-form"><label>Почта<input name="email" type="email" autocomplete="email" required maxlength="254"></label><label>Пароль<input name="password" type="password" autocomplete="${registering ? "new-password" : "current-password"}" required minlength="${registering ? 12 : 1}" maxlength="128"></label>${registering ? '<label>Ваше имя<input name="display_name" maxlength="120"></label><label>Компания<input name="company_name" maxlength="200"></label><label>Роль<select name="role"><option value="business">Подключать агентов для бизнеса</option><option value="developer">Добавлять своих агентов</option></select></label><p class="muted">Пароль от 12 символов. После подтверждения почты вернитесь и войдите.</p>' : ""}<button class="btn btn--primary">${registering ? "Зарегистрироваться" : "Войти"}</button></form>`,
+    registering ? "Создать аккаунт" : "Вход в Keme AI",
+    `<div class="work-tabs"><button type="button" data-auth="login" aria-pressed="${!registering}">Войти</button><button type="button" data-auth="signup" aria-pressed="${registering}">Регистрация</button></div>
+    <form id="auth" class="work-form">
+      <label>Почта<input name="email" type="email" autocomplete="email" value="${e(confirmationEmail)}" required maxlength="254"></label>
+      <label>Пароль<input name="password" type="password" autocomplete="${registering ? "new-password" : "current-password"}" required minlength="${registering ? 12 : 1}" maxlength="128" ${registering ? 'aria-describedby="password-hint"' : ""}></label>
+      ${registering ? `<p id="password-hint" class="muted">Минимум 12 символов</p>
+        <div class="auth-fields"><label>Ваше имя<input name="display_name" autocomplete="name" maxlength="120"></label><label>Компания<input name="company_name" autocomplete="organization" maxlength="200"></label></div>
+        <label>Что хотите делать?<select name="role"><option value="business">Подключать агентов для бизнеса</option><option value="developer">Добавлять своих агентов</option></select></label>` : ""}
+      <button type="submit" class="btn btn--primary">${registering ? "Зарегистрироваться" : "Войти"}</button>
+    </form>
+    <button type="button" class="auth-text-button" data-auth="confirm">Подтвердить почту или запросить письмо</button>`,
   );
   const purpose = document.createElement("p"); purpose.className = "muted";
   purpose.textContent = intent === "publish" ? "Добавьте собственного агента в каталог: опишите возможности и отправьте заявку на рассмотрение." : intent === "connect" ? "Выберите готового агента из каталога и отправьте запрос на подключение для своей компании." : "Вход сохранится на этом устройстве, пока вы не нажмёте «Выйти».";
-  root.querySelector(".work-panel").prepend(purpose);
+  root.querySelector(".work-panel h2").after(purpose);
   if (registering)
     root.querySelector("[name=role]").value =
       new URLSearchParams(location.search).get("role") === "developer"
@@ -210,6 +260,7 @@ async function render() {
     authView();
     return;
   }
+  root.classList.remove("auth-layout");
   const me = await request("/auth/me");
   saveSession({ ...session(), profile: me });
   document.querySelector("#identity").textContent =
@@ -240,6 +291,8 @@ root.addEventListener("click", async (event) => {
     return;
   }
   if (button.dataset.auth) {
+    const email = root.querySelector("#auth [name=email]")?.value.trim();
+    if (email) rememberConfirmationEmail(email);
     authMode = button.dataset.auth;
     tell();
     authView();
@@ -275,7 +328,7 @@ root.addEventListener("submit", async (event) => {
   if (event.target.id === "integration-create") return;
   event.preventDefault();
   const form = event.target,
-    button = form.querySelector("button"),
+    button = event.submitter || form.querySelector("button"),
     data = new FormData(form),
     value = Object.fromEntries(data),
     label = button.textContent;
@@ -285,17 +338,33 @@ root.addEventListener("submit", async (event) => {
     if (form.id === "auth") {
       if (authMode === "login") {
         await login(value);
+        rememberConfirmationEmail("");
         goHomeAfterAuth("signed_in"); return;
       }
       else {
         const result = await signup(value);
         if (result.status === "confirmation_required") {
+          rememberConfirmationEmail(value.email);
           form.reset();
           goHomeAfterAuth("confirm_email");
           return;
         }
       }
+      rememberConfirmationEmail("");
       goHomeAfterAuth("registered"); return;
+    } else if (form.id === "confirm-email") {
+      if (!form.elements.email.reportValidity()) return;
+      rememberConfirmationEmail(value.email);
+      if (button.value === "resend") {
+        await request("/auth/email/resend", { method: "POST", auth: false, body: { email: value.email } });
+        tell("Если адрес ожидает подтверждения, на него придёт новое письмо. Проверьте входящие и спам.");
+      } else {
+        const result = await request("/auth/email/verify", { method: "POST", auth: false, body: value });
+        saveSession(result);
+        rememberConfirmationEmail("");
+        goHomeAfterAuth("registered");
+        return;
+      }
     } else if (form.id === "connect") {
       await request("/connect-requests", { method: "POST", body: value });
       tell("Заявка отправлена.");
@@ -357,6 +426,11 @@ root.addEventListener("submit", async (event) => {
       await render();
     }
   } catch (error) {
+    if (form.id === "auth" && error.code === "email_not_confirmed") {
+      rememberConfirmationEmail(value.email);
+      authMode = "confirm";
+      authView();
+    }
     tell(
       error.message +
         (error.details?.original_saved
@@ -385,6 +459,9 @@ document.querySelector("#logout").addEventListener("click", async () => {
   }
 });
 async function initialize() {
+  if (returningFromConfirmation && !session()) {
+    tell(confirmationFailed ? "Ссылка недействительна или истекла. Запросите новое письмо." : "Войдите с почтой и паролем, чтобы открыть аккаунт.", confirmationFailed);
+  }
   try { if (await finishGoogleLogin()) { goHomeAfterAuth("signed_in"); return; } }
   catch (error) { tell(error.message, true); }
   await render();

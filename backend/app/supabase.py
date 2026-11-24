@@ -54,6 +54,8 @@ class SupabaseGateway:
                     raise APIError(*mapped[db_code])
                 if response.status_code == 403:
                     raise APIError(403, "role_forbidden", "Недостаточно прав для этого действия.")
+            if operation in {"signup", "resend"} and code in {"email_address_not_authorized", "email_provider_disabled"}:
+                raise APIError(503, "confirmation_email_unavailable", "Отправка писем подтверждения пока недоступна. Для аккаунта бизнеса можно войти через Google.")
             if response.status_code >= 500:
                 raise APIError(503, "supabase_unavailable", "Сервис авторизации временно недоступен.")
             if operation == "login" and code == "email_not_confirmed":
@@ -64,6 +66,12 @@ class SupabaseGateway:
                 raise unauthorized("invalid_refresh_token")
             if operation == "oauth":
                 raise APIError(400, "google_login_failed", "Не удалось завершить вход через Google. Начните вход ещё раз.")
+            if operation == "verify_email":
+                raise APIError(400, "invalid_confirmation_code", "Код неверен или истёк. Проверьте код или запросите новое письмо.")
+            if operation == "resend":
+                if code in {"user_not_found", "user_already_exists", "email_already_confirmed"}:
+                    return None
+                raise APIError(422, "confirmation_resend_failed", "Не удалось отправить письмо повторно. Проверьте адрес или попробуйте позже.")
             if operation == "signup":
                 if code == "user_already_exists":
                     return {}  # Preserve signup anti-enumeration semantics.
@@ -72,7 +80,6 @@ class SupabaseGateway:
                     "email_address_invalid": "Проверьте адрес электронной почты.",
                     "signup_disabled": "Регистрация временно отключена.",
                     "captcha_failed": "Пройдите проверку CAPTCHA повторно.",
-                    "email_address_not_authorized": "Отправка писем этому адресу пока не настроена.",
                 }
                 raise APIError(422, code if code in allowed else "signup_failed",
                                allowed.get(code, "Не удалось завершить регистрацию."))

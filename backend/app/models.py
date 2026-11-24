@@ -32,6 +32,24 @@ class RefreshInput(InputModel):
     refresh_token: SecretStr = Field(min_length=1, max_length=8192)
 
 
+class ConfirmationEmail(InputModel):
+    email: EmailStr = Field(max_length=254)
+    captcha_token: SecretStr | None = Field(default=None, min_length=1, max_length=4096)
+
+
+class ConfirmationCode(InputModel):
+    email: EmailStr = Field(max_length=254)
+    code: SecretStr
+
+    @field_validator("code")
+    @classmethod
+    def numeric_code(cls, value: SecretStr) -> SecretStr:
+        code = value.get_secret_value()
+        if not (6 <= len(code) <= 10 and code.isascii() and code.isdecimal()):
+            raise ValueError("Expected a numeric confirmation code")
+        return value
+
+
 class GoogleStartInput(InputModel):
     code_challenge: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
     redirect_to: str = Field(min_length=1, max_length=2048)

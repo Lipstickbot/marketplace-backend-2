@@ -528,8 +528,15 @@ const authAgent = consumeAuthAgent();
 if (authNotice) {
   feedback.hidden = false;
   feedback.textContent = t(authNotice === 'confirm_email' ? 'auth.confirm' : authNotice === 'registered' ? 'auth.registered' : 'auth.welcome');
+  if (authNotice === 'confirm_email') {
+    const confirmLink = document.createElement('a');
+    confirmLink.className = 'auth-resume';
+    confirmLink.href = `/account/?mode=confirm${authAgent ? `&agent=${encodeURIComponent(authAgent)}` : ''}`;
+    confirmLink.textContent = t('auth.confirmLink');
+    feedback.append(confirmLink);
+  }
 }
-if (authAgent) {
+if (authAgent && authNotice !== 'confirm_email') {
   feedback.hidden = false;
   const resume = document.createElement('a'); resume.className = 'auth-resume';
   resume.href = `/account/?agent=${encodeURIComponent(authAgent)}&intent=connect`;

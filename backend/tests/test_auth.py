@@ -154,6 +154,42 @@ def test_signup_supports_session_when_project_does_not_require_confirmation(envi
     assert response.json()["status"] == "signed_in"
 
 
+def test_confirmation_resend_uses_allowlisted_redirect_and_reports_unavailable_email(environment):
+    client, remote = environment
+    email = {"email": "user@example.com"}
+    route = "/auth/v1/resend"
+    remote.overrides[("POST", route)] = httpx.Response(200, json={})
+    response = client.post("/auth/email/resend", json=email, headers={"Origin": "http://localhost:3000"})
+    assert response.status_code == 204
+    assert remote.requests[-1].url.params["redirect_to"] == "http://localhost:3000/account/?email_confirmation=1"
+    assert json.loads(remote.requests[-1].content) == {**email, "type": "signup"}
+
+    response = client.post("/auth/email/resend", json=email, headers={"Origin": "https://untrusted.example"})
+    assert response.status_code == 204 and "redirect_to" not in remote.requests[-1].url.params
+
+    remote.overrides[("POST", route)] = httpx.Response(403, json={"error_code": "email_address_not_authorized"})
+    response = client.post("/auth/email/resend", json=email)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "confirmation_email_unavailable"
+
+
+def test_confirmation_code_starts_session_and_expired_code_is_not_leaked(environment):
+    client, remote = environment
+    data = {"email": "user@example.com", "code": "012345"}
+    route = "/auth/v1/verify"
+    remote.overrides[("POST", route)] = httpx.Response(200, json=remote.session())
+    response = client.post("/api/auth/email/verify", json=data)
+    assert response.status_code == 200 and response.json()["profile"]["user_id"] == A
+    assert json.loads(remote.requests[0].content) == {"email": data["email"], "token": data["code"], "type": "signup"}
+    assert response.headers["Cache-Control"] == "no-store"
+
+    remote.overrides[("POST", route)] = httpx.Response(403, json={"error_code": "otp_expired", "message": data["code"]})
+    response = client.post("/api/auth/email/verify", json=data)
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_confirmation_code"
+    assert data["code"] not in response.text
+
+
 @pytest.mark.parametrize("extra", [{"role": "admin"}, {"company_id": M}, {"user_id": M}, {"password": "short"}])
 def test_signup_cannot_escalate_or_inject_identity_and_never_echoes_secrets(environment, extra):
     client, remote = environment
