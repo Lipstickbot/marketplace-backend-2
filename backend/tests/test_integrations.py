@@ -100,6 +100,23 @@ def test_openai_text_bridge_uses_task_engine_and_audit(environment):
     assert [r['id'] for r in model.json()['data']]==['keme/marketing']
 
 
+def test_agent_specific_base_url_matches_the_key_for_models_and_chat(environment):
+    client, _, engine = environment
+    headers = {'Authorization': 'Bearer ' + create(client)['api_key']}
+    bound = '/api/agents/marketing/v1'
+    wrong = '/api/agents/support/v1'
+    body = {'model': 'keme/marketing', 'messages': [{'role': 'user', 'content': 'Plan a campaign'}]}
+
+    assert client.get(bound + '/models', headers=headers).json()['data'][0]['id'] == 'keme/marketing'
+    for response in (client.get(wrong + '/models', headers=headers),
+                     client.post(wrong + '/chat/completions', headers=headers, json=body)):
+        assert response.status_code == 403
+        assert response.json()['error']['code'] == 'agent_url_not_allowed'
+    assert not engine.requests
+    assert client.get(bound + '/models').status_code == 401
+    assert client.post(bound + '/chat/completions', headers=headers, json=body).status_code == 200
+
+
 def test_revoked_expired_wrong_keys_and_other_agents_cannot_run(environment):
     client,remote,engine=environment
     data=create(client); key=data['api_key']

@@ -7,7 +7,7 @@ import time
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Request, Response
+from fastapi import APIRouter, Depends, Header, Path, Request, Response
 from pydantic import BaseModel, Field, field_validator
 
 from .engine_models import RunInput, StoredFile
@@ -144,7 +144,14 @@ async def integration_context(request: Request, store: Store, authorization: Ann
 Context = Annotated[tuple, Depends(integration_context)]
 
 
+def require_matching_agent(agent_slug: Annotated[str, Path(pattern=r"^[a-z][a-z0-9-]{0,79}$")], context: Context):
+    config, _ = context
+    if config.agent_slug != agent_slug:
+        raise APIError(403, "agent_url_not_allowed", "Этот ключ выдан для другого агента. Используйте его Base URL.")
+
+
 @router.get("/v1/models")
+@router.get("/agents/{agent_slug}/v1/models", dependencies=[Depends(require_matching_agent)])
 async def models(context: Context):
     config, _ = context
     return {"object": "list", "data": [{"id": "keme/" + config.agent_slug, "object": "model", "created": int(config.created_at.timestamp()), "owned_by": "keme-ai"}]}
@@ -162,6 +169,7 @@ class ChatInput(InputModel):
 
 
 @router.post("/v1/chat/completions")
+@router.post("/agents/{agent_slug}/v1/chat/completions", dependencies=[Depends(require_matching_agent)])
 async def chat_completion(body: ChatInput, context: Context, engine: Engine, store: Store, request: Request):
     config, user = context
     if body.model != "keme/" + config.agent_slug:
