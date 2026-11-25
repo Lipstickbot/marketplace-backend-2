@@ -160,7 +160,13 @@ def test_developer_submission_and_owned_cards(environment):
     remote.records['agents'][0]['developer_id']=D
     assert len(client.get('/developer/agents',headers=auth('dev')).json()['items'])==1
     assert remote.requests[-1].url.params['developer_id']==f'eq.{D}'
-    assert client.post('/agent-submissions',headers=auth(),json={'name':'Agent','description':'Description','category':'support'}).status_code==403
+    business=client.post('/agent-submissions',headers=auth(),json={'name':'Agent','description':'Description','category':'support'})
+    assert business.status_code==201
+    assert business.json()['developer_id']==A and business.json()['status']=='pending'
+    remote.records['agent_submissions'].append(submission(id=str(uuid4()),developer_id=A))
+    assert len(client.get('/agent-submissions',headers=auth()).json()['items'])==1
+    assert client.get(f'/agent-submissions/{SUBMISSION}',headers=auth()).status_code==404
+    assert client.post('/agent-submissions',headers=auth('admin'),json={'name':'Agent','description':'Description','category':'support'}).status_code==403
 
 
 @pytest.mark.parametrize('extra',[{'developer_id':M},{'status':'approved'},{'repository_url':'http://example.com/agent'},

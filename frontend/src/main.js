@@ -5,7 +5,7 @@ import { createWave } from './wave.js';
 import { setupFx, splitWords, trackProgress, onScrollFx } from './fx.js';
 import { setupSmoothScroll, pauseScroll, setupNavPill, splitHeading, setupPrism, onScrollPrism } from './prism.js';
 import { submitDeveloperApplication, submitConnectionRequest, session, request, saveSession } from './api.js';
-import { consumeAuthNotice, consumeAuthAgent } from './auth-navigation.js';
+import { consumeAuthNotice, consumeAuthAgent, consumePublicationIntent } from './auth-navigation.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -526,13 +526,14 @@ const arrival = new URL(location.href);
 const authNotice = consumeAuthNotice();
 const feedback = $('#auth-feedback');
 const authAgent = consumeAuthAgent();
+const authPublish = consumePublicationIntent();
 if (authNotice) {
   feedback.hidden = false;
   feedback.textContent = t(authNotice === 'confirm_email' ? 'auth.confirm' : authNotice === 'registered' ? 'auth.registered' : 'auth.welcome');
   if (authNotice === 'confirm_email') {
     const confirmLink = document.createElement('a');
     confirmLink.className = 'auth-resume';
-    confirmLink.href = `/account/?mode=confirm${authAgent ? `&agent=${encodeURIComponent(authAgent)}` : ''}`;
+    confirmLink.href = `/account/?mode=confirm${authAgent ? `&agent=${encodeURIComponent(authAgent)}` : ''}${authPublish ? '&intent=publish' : ''}`;
     confirmLink.textContent = t('auth.confirmLink');
     feedback.append(confirmLink);
   }
@@ -545,12 +546,13 @@ if (authAgent && authNotice !== 'confirm_email') {
 }
 try {
   const draft = JSON.parse(sessionStorage.getItem('keme-draft'));
-  if (session() && ['dev', 'conn'].includes(draft?.kind)) {
+  if (session() && (authPublish || ['dev', 'conn'].includes(draft?.kind))) {
     feedback.hidden = false;
     const resume = document.createElement('a');
     resume.className = 'auth-resume';
-    resume.href = `/account/?intent=${draft.kind === 'dev' ? 'publish' : 'connect'}`;
-    resume.textContent = t(draft.kind === 'dev' ? 'action.resumePublish' : 'action.resumeConnect');
+    const publish = authPublish || draft?.kind === 'dev';
+    resume.href = `/account/?intent=${publish ? 'publish#submission' : 'connect'}`;
+    resume.textContent = t(publish ? 'action.resumePublish' : 'action.resumeConnect');
     feedback.append(resume);
   }
 } catch { /* A missing draft does not affect the account. */ }

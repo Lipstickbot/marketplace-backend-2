@@ -161,17 +161,15 @@ export async function submitDraft(kind, data) {
         error: "Разрешите хранилище вкладки или отправьте заявку из кабинета.",
       };
     }
-    location.assign(
-      `/account/?intent=${kind === "dev" ? "publish" : "connect"}&role=${kind === "dev" ? "developer" : "business"}${kind === "dev" ? "&mode=signup" : ""}`,
-    );
+    location.assign(kind === "dev" ? "/account/?intent=publish#submission" : "/account/?intent=connect");
     return {
       ok: false,
       error: "Войдите и подтвердите отправку сохранённой заявки.",
     };
   }
   try {
-    if (session().profile.role !== (kind === "dev" ? "developer" : "business"))
-      throw new Error(kind === "dev" ? "Добавление своих агентов доступно аккаунту разработчика. Подключение готовых агентов — аккаунту бизнеса." : "Для подключения готового агента войдите в аккаунт бизнеса.");
+    if (kind !== "dev" && session().profile.role !== "business")
+      throw new Error("Для подключения готового агента войдите в аккаунт бизнеса.");
     if (kind === "dev")
       await request("/agent-submissions", {
         method: "POST",

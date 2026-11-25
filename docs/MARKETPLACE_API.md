@@ -37,7 +37,7 @@
 }
 ```
 
-Редактируются `slug`, `name`, `description`, `category`, `status`, `developer_id`, `engine_slug`, `version`, `supported_languages`, `capabilities`, `accepted_file_purposes`, `input_schema`, `output_schema`. Пустой PATCH и неизвестные поля отклоняются. Явный `null` допускается только для `developer_id`, `engine_slug`, `version`. Если разработчик указан, он должен иметь роль `developer`.
+Редактируются `slug`, `name`, `description`, `category`, `status`, `developer_id`, `engine_slug`, `version`, `supported_languages`, `capabilities`, `accepted_file_purposes`, `input_schema`, `output_schema`. Пустой PATCH и неизвестные поля отклоняются. Явный `null` допускается только для `developer_id`, `engine_slug`, `version`. Владельцем карточки может быть профиль с ролью `business` или `developer`.
 
 `slug` и `engine_slug` имеют формат `[a-z][a-z0-9-]{0,79}` и уникальны каждый в своей колонке. `published` требует `engine_slug`; если у карточки уже есть история запусков, смена привязки движка запрещена. Указание slug само по себе не проверяет наличие модуля в AI Engine — перед публикацией работающей карточки требуется интеграционная проверка. Внешний код этот API не загружает и не запускает.
 
@@ -59,9 +59,9 @@
 
 Одобрение заявки даёт запись разрешения для будущего запуска. Оно не включает оплату и само не вызывает движок. Перед будущим запуском сервер также обязан заново проверить, что карточка опубликована.
 
-## Заявки разработчика
+## Заявки на публикацию
 
-Нужен access token и роль `developer`:
+Нужен access token и роль `business` или `developer`:
 
 | Метод и путь | Действие |
 | --- | --- |

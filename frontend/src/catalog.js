@@ -114,7 +114,7 @@ function render() {
   root.innerHTML = `<header class="directory-head"><h1 class="display">${e(c.title)}</h1><p class="lead">${text("Три демо-агента доступны для подключения. Остальные направления готовятся к запуску.", "Үш демо-агент қосылуға қолжетімді. Қалған бағыттар әзірленуде.", "Three demo agents are available to connect. More business areas are coming soon.")}</p></header><div class="directory-tools"><label class="directory-search"><input id="search" type="search" placeholder="${e(c.search)}" aria-label="${e(c.search)}"></label><label>${e(c.filter)} <select id="group"><option value="all">${e(c.all)}</option>${[...new Set(rows.map((r) => r.category))].map((category) => `<option value="${e(category)}">${e(categoryLabel(category))}</option>`).join("")}</select></label></div><p id="count" class="directory-count" role="status"></p><div id="matches" class="acards"></div>`;
   root.querySelector("#search").value = query;
   const add = document.createElement("a"); add.className = "btn btn--primary directory-add";
-  add.href = "/account/?intent=publish&role=developer&mode=signup#submission";
+  add.href = "/account/?intent=publish#submission";
   add.textContent = "+ " + text("Добавить агента", "Агент қосу", "Add agent");
   root.querySelector(".directory-head").append(add);
   root.querySelector("#group").value =

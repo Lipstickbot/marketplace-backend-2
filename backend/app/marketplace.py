@@ -18,6 +18,7 @@ Client = Annotated[SupabaseGateway, Depends(gateway)]
 Token = Annotated[str, Depends(current_token)]
 Business = Annotated[Principal, Depends(require_roles("business"))]
 Developer = Annotated[Principal, Depends(require_roles("developer"))]
+Publisher = Annotated[Principal, Depends(require_roles("business", "developer"))]
 Admin = Annotated[Principal, Depends(require_roles("admin"))]
 Limit = Annotated[int, Query(ge=1, le=100)]
 Offset = Annotated[int, Query(ge=0, le=10000)]
@@ -110,8 +111,8 @@ async def create_connect_request(body: ConnectCreate, user: Business, token: Tok
     return validated(ConnectRequest, rows[0])
 
 
-@router.get("/agent-submissions", response_model=Page[Submission], tags=["Developer"])
-async def submissions(user: Developer, token: Token, client: Client, limit: Limit = 20, offset: Offset = 0,
+@router.get("/agent-submissions", response_model=Page[Submission], tags=["Publishing"])
+async def submissions(user: Publisher, token: Token, client: Client, limit: Limit = 20, offset: Offset = 0,
                       status: ReviewStatus | None = None):
     filters = {"developer_id": f"eq.{user.user_id}"}
     if status:
@@ -119,14 +120,14 @@ async def submissions(user: Developer, token: Token, client: Client, limit: Limi
     return await page(client, "agent_submissions", Submission, limit, offset, token=token, filters=filters)
 
 
-@router.get("/agent-submissions/{submission_id}", response_model=Submission, tags=["Developer"])
-async def submission(submission_id: UUID, user: Developer, token: Token, client: Client):
+@router.get("/agent-submissions/{submission_id}", response_model=Submission, tags=["Publishing"])
+async def submission(submission_id: UUID, user: Publisher, token: Token, client: Client):
     return await one(client, "agent_submissions", Submission, token=token,
                      filters={"id": f"eq.{submission_id}", "developer_id": f"eq.{user.user_id}"})
 
 
-@router.post("/agent-submissions", response_model=Submission, status_code=201, tags=["Developer"])
-async def create_submission(body: SubmissionCreate, user: Developer, token: Token, client: Client):
+@router.post("/agent-submissions", response_model=Submission, status_code=201, tags=["Publishing"])
+async def create_submission(body: SubmissionCreate, user: Publisher, token: Token, client: Client):
     rows = await client.request("POST", "/rest/v1/agent_submissions", token=token, operation="marketplace", representation=True,
                                 body={"developer_id": str(user.user_id), **body.model_dump(mode="json")})
     if not isinstance(rows, list) or len(rows) != 1:

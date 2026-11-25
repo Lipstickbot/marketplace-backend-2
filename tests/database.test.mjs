@@ -166,14 +166,18 @@ test('business can request a published agent only for itself, with server-contro
   await denied(() => user(ids.a, () => query('insert into public.connect_requests(company_id,requested_by,agent_id) values ($1,$1,$2)', [ids.a, ids.agent])), '23505');
 });
 
-test('only developers submit; submission ownership, moderation and publication cannot be forged', async () => {
+test('business and developer accounts submit only their own requests; moderation cannot be forged', async () => {
   const sql = `insert into public.agent_submissions(developer_id,name,description,category)
     values ($1,'Agent','Description','support')`;
   await user(ids.dev, () => query(sql, [ids.dev]));
   assert.equal(await user(ids.dev, () => count('public.agent_submissions')), 1);
   assert.equal(await user(ids.dev2, () => count('public.agent_submissions')), 0);
   assert.equal(await user(ids.admin, () => count('public.agent_submissions')), 1);
-  await denied(() => user(ids.a, () => query(sql, [ids.a])));
+  await user(ids.a, () => query(sql, [ids.a]));
+  assert.equal(await user(ids.a, () => count('public.agent_submissions')), 1);
+  assert.equal(await user(ids.dev, () => count('public.agent_submissions')), 1);
+  await denied(() => user(ids.a, () => query(sql, [ids.dev])));
+  await denied(() => user(ids.admin, () => query(sql, [ids.admin])));
   await denied(() => user(ids.dev2, () => query(sql, [ids.dev])));
   await denied(() => user(ids.dev, () => query(`insert into public.agent_submissions
     (developer_id,name,description,category,status,published_agent_id)
@@ -321,7 +325,7 @@ test('moderation RPCs require a live database admin role and do not grant direct
   await denied(() => user(ids.admin, () => query("update public.agents set name='Bypassed'")));
 });
 
-test('catalog creation and patch validate fields, defaults, developer role and existing engine run history', async () => {
+test('catalog creation and patch validate fields, defaults, publisher role and existing engine run history', async () => {
   const create = (payload) => user(ids.admin, () => query('select public.create_catalog_agent($1) as agent', [payload]));
   const {rows:[{agent}]} = await create({slug:'admin-created',name:'Created',category:'hr',developer_id:ids.dev});
   assert.equal(agent.status,'draft');
@@ -330,7 +334,7 @@ test('catalog creation and patch validate fields, defaults, developer role and e
     [agent.id,{name:'Updated',status:'coming_soon'}]));
   assert.equal(changed.rows[0].agent.developer_id,ids.dev);
   assert.equal(changed.rows[0].agent.name,'Updated');
-  await denied(() => create({slug:'bad-developer',name:'Bad',category:'hr',developer_id:ids.a}), '23514');
+  await denied(() => create({slug:'bad-owner',name:'Bad',category:'hr',developer_id:ids.admin}), '23514');
   await denied(() => create({slug:'extra-field',name:'Bad',category:'hr',id:ids.agent}), '22023');
   await denied(() => create({}), '22023');
   await denied(() => create({slug:'published-no-engine',name:'Bad',category:'hr',status:'published'}), '23514');
@@ -363,9 +367,9 @@ test('connection review records the real moderator, only approves published agen
 });
 
 test('submission approval publishes one coming-soon card atomically and preserves pending state on slug collision', async () => {
-  const submit = async () => (await user(ids.dev, () => query(`insert into public.agent_submissions(developer_id,name,description,category)
-    values ($1,'Submitted Agent','Description','support') returning id`,[ids.dev]))).rows[0].id;
-  const id = await submit();
+  const submit = async (owner = ids.dev) => (await user(owner, () => query(`insert into public.agent_submissions(developer_id,name,description,category)
+    values ($1,'Submitted Agent','Description','support') returning id`,[owner]))).rows[0].id;
+  const id = await submit(ids.a);
   const review = (id,slug) => user(ids.admin, () => query("select public.review_agent_submission($1,'approved','OK',$2) as result",[id,slug]));
   await denied(() => user(ids.dev, () => query("select public.review_agent_submission($1,'approved',null,'bypass')",[id])));
   await denied(() => review(id,'marketing'), '23505');
@@ -374,7 +378,9 @@ test('submission approval publishes one coming-soon card atomically and preserve
   const card=(await query('select * from public.agents where id=$1',[result.published_agent_id])).rows[0];
   assert.equal(card.status,'coming_soon');
   assert.equal(card.engine_slug,null);
-  assert.equal(card.developer_id,ids.dev);
+  assert.equal(card.developer_id,ids.a);
+  assert.equal((await query('select role from public.profiles where id=$1',[ids.a])).rows[0].role,'business');
+  await user(ids.admin, () => query('select public.update_catalog_agent($1,$2)', [card.id, {developer_id: ids.a}]));
   assert.equal(result.reviewed_by,ids.admin);
   assert.equal((await asRole('anon',null,()=>query('select id from public.agents where id=$1',[card.id]))).rows.length,1);
   await denied(() => review(id,'duplicate-card'), 'P0001');

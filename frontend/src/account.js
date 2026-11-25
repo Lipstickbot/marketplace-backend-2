@@ -100,7 +100,7 @@ function authView() {
       <label>Пароль<input name="password" type="password" autocomplete="${registering ? "new-password" : "current-password"}" required minlength="${registering ? 12 : 1}" maxlength="128" ${registering ? 'aria-describedby="password-hint"' : ""}></label>
       ${registering ? `<p id="password-hint" class="muted">Минимум 12 символов</p>
         <div class="auth-fields"><label>Ваше имя<input name="display_name" autocomplete="name" maxlength="120"></label><label>Компания<input name="company_name" autocomplete="organization" maxlength="200"></label></div>
-        <label>Что хотите делать?<select name="role"><option value="business">Подключать агентов для бизнеса</option><option value="developer">Добавлять своих агентов</option></select></label>` : ""}
+        ${intent === "publish" ? '<input type="hidden" name="role" value="business">' : '<label>Что хотите делать?<select name="role"><option value="business">Подключать агентов для бизнеса</option><option value="developer">Добавлять своих агентов</option></select></label>'}` : ""}
       <button type="submit" class="btn btn--primary">${registering ? "Зарегистрироваться" : "Войти"}</button>
     </form>
     ${registering ? "" : '<button type="button" class="auth-text-button" data-auth="confirm">Подтвердить почту или запросить письмо</button>'}`,
@@ -108,7 +108,7 @@ function authView() {
   const purpose = document.createElement("p"); purpose.className = "muted";
   purpose.textContent = intent === "publish" ? "Добавьте собственного агента в каталог: опишите возможности и отправьте заявку на рассмотрение." : intent === "connect" ? "Выберите готового агента из каталога и отправьте запрос на подключение для своей компании." : "Вход сохранится на этом устройстве, пока вы не нажмёте «Выйти».";
   root.querySelector(".work-panel h2").after(purpose);
-  if (registering)
+  if (registering && intent !== "publish")
     root.querySelector("[name=role]").value =
       new URLSearchParams(location.search).get("role") === "developer"
         ? "developer"
@@ -218,9 +218,9 @@ async function showRuns() {
     list.textContent = error.message;
   }
 }
-async function developerView() {
+async function publicationView() {
   const rows = await all("/agent-submissions");
-  root.innerHTML = `<div class="work-grid">${panel("Добавить своего агента", '<p class="muted">Опишите собственного агента для публикации в каталоге. Подключение готового агента оформляется отдельно в аккаунте бизнеса.</p><form id="submission" class="work-form"><label>Название<input name="name" required maxlength="160"></label><label>Категория<input name="category" required maxlength="80"></label><label>Описание и ограничения<textarea name="description" required maxlength="10000"></textarea></label><label>Репозиторий HTTPS<input name="repository_url" type="url" placeholder="https://github.com/…"></label><button class="btn btn--primary">Отправить</button></form>')}${panel("Мои заявки", rows.map((r) => `<div class="work-item"><h3>${e(r.name)}</h3><p>${e(status(r.status))}</p><p>${e(r.review_note || "")}</p></div>`).join("") || "<p>Заявок пока нет.</p>")}</div>`;
+  root.innerHTML = `<div class="work-grid">${panel("Добавить своего агента", '<p class="muted">Опишите агента и отправьте заявку на публикацию в каталоге. Статус появится в разделе «Мои заявки».</p><form id="submission" class="work-form"><label>Название<input name="name" required maxlength="160"></label><label>Категория<input name="category" required maxlength="80"></label><label>Описание и ограничения<textarea name="description" required maxlength="10000"></textarea></label><label>Репозиторий HTTPS<input name="repository_url" type="url" placeholder="https://github.com/…"></label><button class="btn btn--primary">Отправить</button></form>')}${panel("Мои заявки", rows.map((r) => `<div class="work-item"><h3>${e(r.name)}</h3><p>${e(status(r.status))}</p><p>${e(r.review_note || "")}</p></div>`).join("") || "<p>Заявок пока нет.</p>")}</div>`;
 }
 async function adminView() {
   const [connects, submissions] = await Promise.all([
@@ -229,7 +229,7 @@ async function adminView() {
   ]);
   const form = (type, row) =>
     `<form class="work-form work-item" data-review="${type}" data-id="${e(row.id)}"><p>${e(type === "connect-requests" ? row.company_id : row.name)}</p>${type === "connect-requests" ? `<p>${e(row.message)}</p><p class="muted">Агент: ${e(row.agent_id)}</p>` : `<p>${e(row.description)}</p><p>${e(row.repository_url || "")}</p><label>Slug карточки при одобрении<input name="publication_slug" pattern="[a-z][a-z0-9-]{0,79}"></label>`}<label>Решение<select name="decision"><option value="approved">Одобрить</option><option value="rejected">Отклонить</option></select></label><label>Комментарий<textarea name="review_note" maxlength="4000"></textarea></label><button class="btn btn--primary">Сохранить решение</button></form>`;
-  root.innerHTML = `<div class="work-grid">${panel("Подключения бизнеса", connects.map((r) => form("connect-requests", r)).join("") || "<p>Нет ожидающих заявок.</p>")}${panel("Публикации разработчиков", submissions.map((r) => form("agent-submissions", r)).join("") || "<p>Нет ожидающих заявок.</p>")}</div>`;
+  root.innerHTML = `<div class="work-grid">${panel("Подключения бизнеса", connects.map((r) => form("connect-requests", r)).join("") || "<p>Нет ожидающих заявок.</p>")}${panel("Заявки на публикацию", submissions.map((r) => form("agent-submissions", r)).join("") || "<p>Нет ожидающих заявок.</p>")}</div>`;
 }
 function draftView() {
   let draft;
@@ -272,24 +272,14 @@ async function render() {
   saveSession({ ...session(), profile: me });
   document.querySelector("#identity").textContent =
     `${me.display_name || me.email || ""} · ${{ business: "Бизнес", developer: "Разработчик", admin: "Администратор" }[me.role]}`;
-  if (me.role === "business" && intent === "publish") {
-    root.innerHTML = panel("Добавить своего агента", '<p class="muted">Сейчас вы вошли в аккаунт бизнеса: он подключает готовых агентов. Публикация собственного агента доступна аккаунту разработчика.</p><button type="button" class="btn btn--primary" id="developer-signin">Войти как разработчик</button><p><a class="link" href="/catalog/">Вернуться в каталог</a></p>');
-    return;
-  }
-  if (me.role === "business") return businessView();
-  else if (me.role === "developer") await developerView();
-  else await adminView();
+  if (me.role === "admin") await adminView();
+  else if (intent === "publish" || me.role === "developer") await publicationView();
+  else return businessView();
   draftView();
 }
 root.addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button) return;
-  if (button.id === "developer-signin") {
-    button.disabled = true;
-    try { await logout(); authMode = "signup"; await render(); document.querySelector("#identity").textContent = "Агенты, документы и результаты в одном месте."; }
-    catch(error) { tell(error.message,true); button.disabled = false; }
-    return;
-  }
   if (button.id === "google-login") {
     button.disabled = true;
     tell("Открываем Google…");

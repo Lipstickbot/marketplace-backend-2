@@ -11,7 +11,8 @@ export async function startGoogleLogin() {
   if (!crypto?.subtle) throw new Error("Для входа через Google откройте сайт по HTTPS.");
   const verifier = random(), state = random();
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-  const pending = { verifier, state, createdAt: Date.now(), agent: new URLSearchParams(location.search).get("agent") };
+  const params = new URLSearchParams(location.search);
+  const pending = { verifier, state, createdAt: Date.now(), agent: params.get("agent"), publish: params.get("intent") === "publish" };
   try {
     sessionStorage.setItem(KEY, JSON.stringify(pending));
     if (sessionStorage.getItem(KEY) !== JSON.stringify(pending)) throw new Error();
@@ -48,6 +49,7 @@ export async function finishGoogleLogin() {
   // Remove one-use codes and all possible tokens from the address before any API call.
   const clean = new URL("/account/", url.origin);
   if (/^[a-z][a-z0-9-]{0,79}$/.test(pending?.agent || "")) clean.searchParams.set("agent", pending.agent);
+  if (pending?.publish === true) clean.searchParams.set("intent", "publish");
   history.replaceState(null, "", clean.pathname + clean.search);
   if (error || hash.has("error")) throw new Error("Вход через Google отменён или не завершён. Попробуйте ещё раз.");
   if (!pending?.verifier || !code || returnedState !== pending.state ||
