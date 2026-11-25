@@ -10,7 +10,7 @@ import {
 } from "./api.js";
 import { startGoogleLogin, finishGoogleLogin } from "./google-auth.js";
 import { goHomeAfterAuth } from "./auth-navigation.js";
-import { setupIntegrations, agentLink } from "./integrations.js";
+import { setupIntegrations } from "./integrations.js";
 const root = document.querySelector("#workspace"),
   notice = document.querySelector("#notice");
 const e = (v) =>
@@ -141,29 +141,22 @@ async function businessView() {
   const approved = published.filter((a) => connections.some((c) => c.agent_id === a.id && c.status === "approved"));
   const chosen = new URLSearchParams(location.search).get("agent");
   const options = published
-    .map((a) => `<option value="${e(a.id)}">${e(a.name)}</option>`)
+    .map((a) => `<option value="${e(a.id)}" ${a.slug === chosen ? "selected" : ""}>${e(a.name)}</option>`)
     .join("");
-  root.innerHTML = `<div class="work-grid">${panel("Подключить готового агента", `<p class="muted">Выберите агента из каталога для работы в вашей компании. Эта заявка не публикует нового агента.</p><form id="connect" class="work-form"><label>Агент<select name="agent_id">${options}</select></label><label>Задача<textarea name="message" maxlength="4000"></textarea></label><button class="btn btn--primary">Запросить подключение</button></form>${connections.map((c) => `<div class="work-item"><strong>${e(agents.find((a) => a.id === c.agent_id)?.name || c.agent_id)}</strong><p>${e(status(c.status))}</p><p>${e(c.review_note || "")}</p></div>`).join("")}`)}
+  root.innerHTML = `<div class="work-grid">${panel("Подключить готового агента", `<p class="muted">Выберите агента и опишите задачу для вашей компании.</p><form id="connect" class="work-form"><label>Агент<select name="agent_id">${options}</select></label><label>Задача<textarea name="message" maxlength="4000"></textarea></label><button class="btn btn--primary">Запросить подключение</button></form>`)}
   ${panel("Документы", `<p class="muted">PDF, DOCX или TXT до 10 MiB. Для проверки используйте вымышленные данные.</p><form id="upload" class="work-form"><label>Файл<input name="file" type="file" accept=".pdf,.docx,.txt" required></label><label>Назначение<select name="purpose"><option value="brief">Бриф Marketing</option><option value="knowledge_base">База знаний Support</option><option value="resume">Резюме HR</option><option value="job_description">Вакансия HR</option></select></label><button class="btn btn--secondary">Загрузить</button></form>${files.map((f) => `<div class="work-item"><strong>${e(f.original_name)}</strong><p class="muted">${e(f.purpose)} · ${f.engine_file_id ? "Синхронизирован" : "Ожидает синхронизации"}</p><div class="work-row"><button class="btn btn--secondary" data-download="${e(f.id)}">Скачать</button><button class="btn btn--secondary" data-delete="${e(f.id)}">Удалить</button></div></div>`).join("")}`)}
   </div>`;
 
   const grid = root.querySelector(".work-grid");
-  const selected = published.find((a) => a.slug === chosen);
-  if (selected) {
-    const linkBox = document.createElement("section");
-    linkBox.className = "work-panel wide";
-    linkBox.innerHTML = `<h2>${e(selected.name)} — подключение под задачу</h2><p class="muted">Запросите доступ. После одобрения настройте задачу и создайте API-подключение. Документы можно добавить по необходимости.</p><label class="work-form">Ссылка на агента<input readonly value="${e(agentLink(selected.slug))}" aria-label="Ссылка на агента"></label><a class="btn btn--secondary" href="#application-integrations">Настроить API / LLM</a>`;
-    grid.prepend(linkBox);
-    root.querySelector("#connect [name=agent_id]").value = selected.id;
-  }
-
-  const integrationsReady = setupIntegrations(root, agents, connections, files, tell);
+  const integrationsReady = setupIntegrations(root, agents, connections, files, tell, status);
   if (approved.length) renderTrialRun(grid, approved, chosen);
   grid.insertAdjacentHTML("beforeend", `<details class="work-panel wide workspace-details" id="run-history"><summary>История запусков</summary><div id="runs" aria-live="polite"></div></details>`);
   const history = grid.querySelector("#run-history");
   history.addEventListener("toggle", () => {
     if (history.open) showRuns();
   });
+  if (location.hash === "#application-integrations" || location.hash === "#integration-history")
+    grid.querySelector(location.hash)?.scrollIntoView();
   await integrationsReady;
 }
 
@@ -369,6 +362,7 @@ root.addEventListener("submit", async (event) => {
       await request("/connect-requests", { method: "POST", body: value });
       tell("Заявка отправлена.");
       await render();
+      root.querySelector("#integration-history")?.scrollIntoView({ behavior: "smooth" });
     } else if (form.id === "upload") {
       const file = data.get("file");
       if (!file.size || file.size > 10 * 1024 * 1024)

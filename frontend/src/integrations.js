@@ -34,7 +34,18 @@ function integrationRecord(row, agentName) {
   </article>`;
 }
 
-export async function setupIntegrations(root, agents, connections, files, tell) {
+function connectionRecord(connection, agent, statusLabel) {
+  const agentName = agent?.name || "Агент недоступен";
+  const canOpen = agent?.status === "published" || agent?.status === "coming_soon";
+  const link = canOpen ? `${agentLink(agent.slug)}${connection.status === "approved" && agent.status === "published" ? "#application-integrations" : ""}` : "";
+  return `<li class="connection-record">
+    <div><strong>${e(agentName)}</strong>${connection.review_note ? `<p class="muted">${e(connection.review_note)}</p>` : ""}</div>
+    <span class="pill connection-status" data-state="${e(connection.status)}">${e(statusLabel(connection.status))}</span>
+    ${canOpen ? `<a class="link" href="${e(link)}" aria-label="Открыть агента: ${e(agentName)}">Открыть агента →</a>` : ""}
+  </li>`;
+}
+
+export async function setupIntegrations(root, agents, connections, files, tell, statusLabel) {
   const approved = agents.filter(a => a.status === "published" && connections.some(c => c.agent_id === a.id && c.status === "approved"));
   const chosen = new URLSearchParams(location.search).get("agent");
   const host = document.createElement("section");
@@ -44,9 +55,15 @@ export async function setupIntegrations(root, agents, connections, files, tell) 
   const history = document.createElement("section");
   history.className = "work-panel wide";
   history.id = "integration-history";
-  history.innerHTML = `<h2>История API-подключений</h2>
-    <p class="muted">Здесь доступны адрес, модель и статус каждого подключения. Полный ключ показывается при создании.</p>
-    <div id="integration-list" aria-live="polite">Загрузка…</div>`;
+  const requests = connections.map((connection) => connectionRecord(
+    connection, agents.find((agent) => agent.id === connection.agent_id), statusLabel,
+  ));
+  history.innerHTML = `<h2>История подключений</h2>
+    ${requests.length ? `<ul class="connection-history">${requests.join("")}</ul>` : '<p class="muted">Заявок на подключение пока нет.</p>'}
+    <div class="integration-history-list">
+      <h3>API-подключения</h3>
+      <div id="integration-list" aria-live="polite">Загрузка…</div>
+    </div>`;
   grid.append(host, history);
   const box = host.querySelector("#integration-new");
   const list = history.querySelector("#integration-list");
@@ -67,7 +84,7 @@ export async function setupIntegrations(root, agents, connections, files, tell) 
       list.innerHTML = rows.map((row) => {
         const agentName = agents.find((agent) => agent.slug === row.agent_slug)?.name || row.agent_slug;
         return integrationRecord(row, agentName);
-      }).join("") || '<p class="muted">Подключений пока нет.</p>';
+      }).join("") || '<p class="muted">API-подключений пока нет.</p>';
     } catch {
       if (sequence !== historyRequest) return;
       list.innerHTML = '<p class="muted">Не удалось загрузить историю.</p><button type="button" class="btn btn--secondary" data-reload-integration-history>Повторить</button>';
@@ -91,7 +108,7 @@ export async function setupIntegrations(root, agents, connections, files, tell) 
         ${copyField("integration-base", "Base URL", integrationBase(slug))}
         ${copyField("integration-model", "Model", `keme/${slug}`)}
         <details><summary>Пример запроса cURL</summary><pre class="work-code"></pre></details>
-        <a class="link" href="#integration-history">Открыть историю API-подключений</a>`;
+        <a class="link" href="#integration-history">Открыть историю подключений</a>`;
       box.querySelector("#integration-key").value = result.api_key;
       box.querySelector("pre").textContent = integrationExample(slug);
       box.hidden = false;

@@ -179,6 +179,16 @@
 .integration-field label { font-size: 15px; font-weight: 500; }
 .integration-field input { flex: 1 1 160px; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: var(--r-sm); font: inherit; }
 .integration-copy { display: flex; gap: 8px; }
+.connection-history { list-style: none; padding: 0; margin: 0; }
+.connection-record { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px 22px; padding-block: 14px; border-bottom: 1px solid var(--line-2); }
+.connection-record > div { min-width: 0; overflow-wrap: anywhere; }
+.connection-record .link { white-space: nowrap; }
+.connection-status { justify-self: start; }
+.connection-status[data-state="approved"] { color: #176544; background: #e5f7ed; }
+.connection-status[data-state="pending"] { color: #805300; background: #fff3d6; }
+.connection-status[data-state="rejected"] { color: #9a283a; background: #fff0f3; }
+.integration-history-list { margin-top: 24px; }
+.integration-history-list > h3 { margin: 0 0 8px; }
 .integration-record { display: grid; gap: 14px; padding-block: 20px; }
 .integration-record:first-child { margin-top: 16px; }
 .integration-record-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -208,6 +218,8 @@
 }
 @media (max-width: 460px) {
   .auth-fields { grid-template-columns: 1fr; }
+  .connection-record { display: flex; flex-wrap: wrap; }
+  .connection-record > div { flex-basis: 100%; }
   .account-page .directory-nav { display: flex; gap: 0 !important; }
   .account-page .directory-nav a { padding-inline: 6px; font-size: 13px; }
 }
