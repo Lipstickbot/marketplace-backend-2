@@ -41,10 +41,11 @@ function connectionRecord(connection, agent, statusLabel) {
   if (link && connection.status === "approved" && agent.status === "published") {
     link.searchParams.set("view", "integration");
   }
+  const route = link?.searchParams.get("view") === "integration" ? " data-workspace-route" : "";
   return `<li class="connection-record">
     <div><strong>${e(agentName)}</strong>${connection.review_note ? `<p class="muted">${e(connection.review_note)}</p>` : ""}</div>
     <span class="pill connection-status" data-state="${e(connection.status)}">${e(statusLabel(connection.status))}</span>
-    ${canOpen ? `<a class="link" href="${e(link)}" aria-label="Открыть агента: ${e(agentName)}">Открыть агента →</a>` : ""}
+    ${canOpen ? `<a class="link" href="${e(link)}"${route} aria-label="Открыть агента: ${e(agentName)}">Открыть агента →</a>` : ""}
   </li>`;
 }
 
@@ -55,17 +56,18 @@ export async function setupIntegrationHistory(grid, agents, connections, tell, s
   const requests = connections.map((connection) => connectionRecord(
     connection, agents.find((agent) => agent.id === connection.agent_id), statusLabel,
   ));
-  history.innerHTML = `<h2>История подключений</h2>
+  history.innerHTML = `<h2 tabindex="-1">История подключений</h2>
     ${requests.length ? `<ul class="connection-history">${requests.join("")}</ul>` : '<p class="muted">Заявок на подключение пока нет.</p>'}
     <div class="integration-history-list">
       <h3>API-подключения</h3>
-      <div id="integration-list" aria-live="polite">Загрузка…</div>
+      <div id="integration-list" aria-live="polite" aria-busy="true"></div>
     </div>`;
   grid.append(history);
   const list = history.querySelector("#integration-list");
   let historyRequest = 0;
   async function showList() {
     const sequence = ++historyRequest;
+    list.setAttribute("aria-busy", "true");
     try {
       const rows = await request("/integrations");
       if (sequence !== historyRequest) return;
@@ -76,6 +78,8 @@ export async function setupIntegrationHistory(grid, agents, connections, tell, s
     } catch {
       if (sequence !== historyRequest) return;
       list.innerHTML = '<p class="muted">Не удалось загрузить историю.</p><button type="button" class="btn btn--secondary" data-reload-integration-history>Повторить</button>';
+    } finally {
+      if (sequence === historyRequest) list.setAttribute("aria-busy", "false");
     }
   }
   enableCopy(history, tell);
@@ -123,9 +127,9 @@ const purposes = {
 };
 const historyUrl = "/account/#integration-history";
 
-export function renderIntegrationScreen(root, agent, files, tell) {
+export function renderIntegrationScreen(root, agent, files, tell, updateFiles) {
   root.innerHTML = `
-    <a class="link integration-back" href="${historyUrl}">← К истории подключений</a>
+    <a class="link integration-back" href="${historyUrl}" data-workspace-route>← К истории подключений</a>
     <section class="work-panel integration-screen" id="application-integrations"></section>`;
   const host = root.querySelector("#application-integrations");
   if (!agent) {
@@ -153,7 +157,7 @@ export function renderIntegrationScreen(root, agent, files, tell) {
         <p class="muted">PDF, DOCX или TXT до 10 МиБ. Отметьте файлы, которые агент будет использовать.</p>
         <form class="work-form" id="integration-upload">
           <div class="integration-fields">
-            <label>Файл<input name="file" type="file" accept=".pdf,.docx,.txt" required></label>
+            <label class="file-picker">Файл<input name="file" type="file" accept=".pdf,.docx,.txt" required></label>
             <label>Назначение<select name="purpose">${acceptedPurposes.map((p) => `<option value="${e(p)}">${e(purposes[p] || p)}</option>`).join("")}</select></label>
           </div>
           <div class="work-row"><button class="btn btn--secondary" type="submit">Загрузить документ</button></div>
@@ -171,7 +175,6 @@ export function renderIntegrationScreen(root, agent, files, tell) {
   const form = host.querySelector("#integration-create");
   const upload = host.querySelector("#integration-upload");
   const list = host.querySelector("#integration-documents-list");
-  const create = host.querySelector(".integration-submit");
   const box = host.querySelector("#integration-new");
   let working = false;
 
@@ -201,6 +204,7 @@ export function renderIntegrationScreen(root, agent, files, tell) {
     } catch (error) {
       if (error.details?.original_saved) {
         files = await all("/files").catch(() => files);
+        updateFiles(files);
         renderDocuments();
       }
       tell(error.message + (error.details?.original_saved ? " Оригинал сохранён." : ""), true);
@@ -232,7 +236,7 @@ export function renderIntegrationScreen(root, agent, files, tell) {
         ${copyField("integration-base", "Base URL", integrationBase(slug))}
         ${copyField("integration-model", "Model", `keme/${slug}`)}
         <details><summary>Пример запроса cURL</summary><pre class="work-code"></pre></details>
-        <a class="link" href="${historyUrl}">Открыть историю подключений</a>`;
+        <a class="link" href="${historyUrl}" data-workspace-route>Открыть историю подключений</a>`;
       box.querySelector("#integration-key").value = result.api_key;
       box.querySelector("pre").textContent = integrationExample(slug);
       box.hidden = false;
@@ -250,6 +254,7 @@ export function renderIntegrationScreen(root, agent, files, tell) {
         throw new Error("Выберите непустой файл до 10 МиБ.");
       const saved = await request("/files/upload", { method: "POST", body: data });
       files = [saved, ...files];
+      updateFiles(files);
       renderDocuments([...new FormData(form).getAll("file_ids"), saved.id]);
       upload.reset();
       tell("Документ загружен и отмечен для этой задачи.");
@@ -267,10 +272,12 @@ export function renderIntegrationScreen(root, agent, files, tell) {
           await request("/files/" + encodeURIComponent(file.id), { method: "DELETE" });
         } catch (error) {
           files = await all("/files").catch(() => files);
+          updateFiles(files);
           renderDocuments();
           throw error;
         }
         files = files.filter((item) => item.id !== file.id);
+        updateFiles(files);
         renderDocuments();
         tell("Документ удалён.");
       });

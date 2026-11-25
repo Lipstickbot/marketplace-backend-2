@@ -14,6 +14,7 @@ import { setupIntegrationHistory, renderIntegrationScreen } from "./integrations
 const root = document.querySelector("#workspace"),
   notice = document.querySelector("#notice"),
   workspaceTitle = document.querySelector("#workspace-title");
+const workspacePlaceholder = root.firstElementChild.cloneNode(true);
 const e = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -55,6 +56,7 @@ let agents = [],
   files = [],
   connections = [],
   authMode = accountUrl.searchParams.get("mode") === "signup" ? "signup" : "login";
+let businessDataOwner, renderVersion = 0;
 if (accountUrl.searchParams.get("mode") === "confirm" || confirmationFailed) authMode = "confirm";
 const intent = new URLSearchParams(location.search).get("intent");
 let googleAvailable = null;
@@ -135,21 +137,24 @@ function authView() {
     if (button.isConnected) status.textContent = "Не удалось проверить Google. Попробуйте обновить страницу.";
   });
 }
-async function businessView() {
+function loadBusinessData() {
+  return Promise.all([all("/agents", { auth: false }), all("/connect-requests"), all("/files")]);
+}
+function renderBusinessRoute() {
   const url = new URL(location.href);
   const openingAgent = url.searchParams.get("view") === "integration" || url.hash === "#application-integrations";
-  [agents, connections, files] = await Promise.all([
-    all("/agents", { auth: false }),
-    all("/connect-requests"),
-    all("/files"),
-  ]);
   if (openingAgent) {
     workspaceTitle.textContent = "Подключить к своему приложению";
     const agent = agents.find((a) => a.slug === url.searchParams.get("agent") && a.status === "published"
       && connections.some((c) => c.agent_id === a.id && c.status === "approved"));
-    renderIntegrationScreen(root, agent, files, tell);
+    const owner = businessDataOwner;
+    renderIntegrationScreen(root, agent, files, tell, (updated) => {
+      if (businessDataOwner === owner) files = updated;
+    });
     return;
   }
+  workspaceTitle.textContent = "Рабочий кабинет";
+  document.title = "Кабинет — Keme AI";
   renderBusiness();
   draftView();
 }
@@ -204,7 +209,8 @@ function syncRunFiles(form) {
 async function showRuns() {
   const list = root.querySelector("#run-history[open] #runs");
   if (!list) return;
-  list.textContent = "Загрузка…";
+  if (list.getAttribute("aria-busy") === "true") return;
+  list.setAttribute("aria-busy", "true");
   try {
     const rows = await all("/runs");
     list.innerHTML =
@@ -216,6 +222,8 @@ async function showRuns() {
       .join("") || '<p class="muted">Запусков пока нет.</p>';
   } catch (error) {
     list.textContent = error.message;
+  } finally {
+    list.setAttribute("aria-busy", "false");
   }
 }
 async function publicationView() {
@@ -260,23 +268,63 @@ function draftView() {
   });
 }
 async function render() {
+  const version = ++renderVersion;
+  businessDataOwner = null;
+  const active = session();
   workspaceTitle.textContent = "Рабочий кабинет";
   document.title = "Кабинет — Keme AI";
-  document.querySelector("#logout").hidden = !session();
-  if (!session()) {
+  document.querySelector("#logout").hidden = !active;
+  if (!active) {
+    root.setAttribute("aria-busy", "false");
+    document.querySelector("#identity").textContent = "Подключайте агентов и управляйте доступом к ним.";
     authView();
     return;
   }
+  root.setAttribute("aria-busy", "true");
   root.classList.remove("auth-layout");
+  const business = intent !== "publish" && active.profile?.role === "business"
+    ? loadBusinessData().then((rows) => ({ rows }), (error) => ({ error }))
+    : null;
   const me = await request("/auth/me");
-  saveSession({ ...session(), profile: me });
+  const current = session();
+  if (version !== renderVersion || !current || (current.profile?.user_id && current.profile.user_id !== me.user_id)) return;
+  saveSession({ ...current, profile: me });
   document.querySelector("#identity").textContent =
     `${me.display_name || me.email || ""} · ${{ business: "Бизнес", developer: "Разработчик", admin: "Администратор" }[me.role]}`;
-  if (me.role === "admin") await adminView();
-  else if (intent === "publish" || me.role === "developer") await publicationView();
-  else return businessView();
-  draftView();
+  if (me.role === "business" && intent !== "publish") {
+    const data = business ? await business : { rows: await loadBusinessData() };
+    if (version !== renderVersion || session()?.profile?.user_id !== me.user_id) return;
+    if (data.error) throw data.error;
+    [agents, connections, files] = data.rows;
+    businessDataOwner = me.user_id;
+    renderBusinessRoute();
+  } else {
+    if (me.role === "admin") await adminView();
+    else await publicationView();
+    draftView();
+  }
+  root.setAttribute("aria-busy", "false");
 }
+
+function navigateBusinessView() {
+  tell();
+  renderBusinessRoute();
+  if (location.hash !== "#integration-history") window.scrollTo(0, 0);
+}
+root.addEventListener("click", (event) => {
+  const link = event.target.closest("a[data-workspace-route]");
+  if (!link || event.defaultPrevented || event.button !== 0 ||
+      event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
+      !businessDataOwner || businessDataOwner !== session()?.profile?.user_id) return;
+  event.preventDefault();
+  if (link.href !== location.href) history.pushState(null, "", link.href);
+  navigateBusinessView();
+  const heading = location.hash === "#integration-history" ? root.querySelector("#integration-history h2") : workspaceTitle;
+  heading?.focus({ preventScroll: true });
+});
+window.addEventListener("popstate", () => {
+  if (businessDataOwner && businessDataOwner === session()?.profile?.user_id) navigateBusinessView();
+});
 root.addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button) return;
@@ -433,11 +481,20 @@ async function initialize() {
   catch (error) { tell(error.message, true); }
   await render();
 }
-initialize().catch((error) => {
+function showWorkspaceError(error) {
+  root.setAttribute("aria-busy", "false");
   tell(error.message, true);
-  if (!session()) authView();
-});
+  if (!session()) return void render();
+  if (!root.querySelector(".work-grid, .integration-screen")) {
+    root.innerHTML = panel("Кабинет недоступен", '<button class="btn btn--secondary" type="button" id="retry-workspace">Повторить</button>');
+    root.querySelector("#retry-workspace").onclick = () => {
+      tell();
+      render().catch(showWorkspaceError);
+    };
+  }
+}
+initialize().catch(showWorkspaceError);
 window.addEventListener("keme-session-changed", () => {
-  root.innerHTML = "";
-  render().catch((error) => { tell(error.message, true); if (!session()) authView(); });
+  root.replaceChildren(workspacePlaceholder.cloneNode(true));
+  render().catch(showWorkspaceError);
 });
