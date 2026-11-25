@@ -10,9 +10,10 @@ import {
 } from "./api.js";
 import { startGoogleLogin, finishGoogleLogin } from "./google-auth.js";
 import { goHomeAfterAuth } from "./auth-navigation.js";
-import { setupIntegrations } from "./integrations.js";
+import { setupIntegrationHistory, renderIntegrationScreen } from "./integrations.js";
 const root = document.querySelector("#workspace"),
-  notice = document.querySelector("#notice");
+  notice = document.querySelector("#notice"),
+  workspaceTitle = document.querySelector("#workspace-title");
 const e = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -135,12 +136,22 @@ function authView() {
   });
 }
 async function businessView() {
+  const url = new URL(location.href);
+  const openingAgent = url.searchParams.get("view") === "integration" || url.hash === "#application-integrations";
   [agents, connections, files] = await Promise.all([
     all("/agents", { auth: false }),
     all("/connect-requests"),
     all("/files"),
   ]);
+  if (openingAgent) {
+    workspaceTitle.textContent = "Подключить к своему приложению";
+    const agent = agents.find((a) => a.slug === url.searchParams.get("agent") && a.status === "published"
+      && connections.some((c) => c.agent_id === a.id && c.status === "approved"));
+    renderIntegrationScreen(root, agent, files, tell);
+    return;
+  }
   renderBusiness();
+  draftView();
 }
 function renderBusiness(chosen = new URLSearchParams(location.search).get("agent")) {
   const published = agents.filter((a) => a.status === "published");
@@ -148,20 +159,17 @@ function renderBusiness(chosen = new URLSearchParams(location.search).get("agent
   const options = published
     .map((a) => `<option value="${e(a.id)}" ${a.slug === chosen ? "selected" : ""}>${e(a.name)}</option>`)
     .join("");
-  root.innerHTML = `<div class="work-grid">${panel("Подключить готового агента", `<p class="muted">Выберите агента и опишите задачу для своей компании. Доступ к демо-агентам открывается сразу.</p><form id="connect" class="work-form"><label>Агент<select name="agent_id">${options}</select></label><label>Задача<textarea name="message" maxlength="4000"></textarea></label><button class="btn btn--primary">Подключить агента</button></form>`)}
-  ${panel("Документы", `<p class="muted">PDF, DOCX или TXT до 10 MiB. Для проверки используйте вымышленные данные.</p><form id="upload" class="work-form"><label>Файл<input name="file" type="file" accept=".pdf,.docx,.txt" required></label><label>Назначение<select name="purpose"><option value="brief">Бриф Marketing</option><option value="knowledge_base">База знаний Support</option><option value="resume">Резюме HR</option><option value="job_description">Вакансия HR</option></select></label><button class="btn btn--secondary">Загрузить</button></form>${files.map((f) => `<div class="work-item"><strong>${e(f.original_name)}</strong><p class="muted">${e(f.purpose)} · ${f.engine_file_id ? "Синхронизирован" : "Ожидает синхронизации"}</p><div class="work-row"><button class="btn btn--secondary" data-download="${e(f.id)}">Скачать</button><button class="btn btn--secondary" data-delete="${e(f.id)}">Удалить</button></div></div>`).join("")}`)}
-  </div>`;
+  root.innerHTML = `<div class="work-grid">${panel("Подключить готового агента", `<p class="muted">Выберите агента и опишите задачу для своей компании. Доступ к демо-агентам открывается сразу.</p><form id="connect" class="work-form"><label>Агент<select name="agent_id">${options}</select></label><label>Задача<textarea name="message" maxlength="4000"></textarea></label><button class="btn btn--primary">Подключить агента</button></form>`, true)}</div>`;
 
   const grid = root.querySelector(".work-grid");
-  void setupIntegrations(root, agents, connections, files, tell, status);
+  void setupIntegrationHistory(grid, agents, connections, tell, status);
   if (approved.length) renderTrialRun(grid, approved, chosen);
   grid.insertAdjacentHTML("beforeend", `<details class="work-panel wide workspace-details" id="run-history"><summary>История запусков</summary><div id="runs" aria-live="polite"></div></details>`);
   const history = grid.querySelector("#run-history");
   history.addEventListener("toggle", () => {
     if (history.open) showRuns();
   });
-  if (location.hash === "#application-integrations" || location.hash === "#integration-history")
-    grid.querySelector(location.hash)?.scrollIntoView();
+  if (location.hash === "#integration-history") grid.querySelector("#integration-history")?.scrollIntoView();
 }
 
 function renderTrialRun(grid, approved, chosen) {
@@ -252,6 +260,8 @@ function draftView() {
   });
 }
 async function render() {
+  workspaceTitle.textContent = "Рабочий кабинет";
+  document.title = "Кабинет — Keme AI";
   document.querySelector("#logout").hidden = !session();
   if (!session()) {
     authView();
@@ -266,7 +276,7 @@ async function render() {
     root.innerHTML = panel("Добавить своего агента", '<p class="muted">Сейчас вы вошли в аккаунт бизнеса: он подключает готовых агентов. Публикация собственного агента доступна аккаунту разработчика.</p><button type="button" class="btn btn--primary" id="developer-signin">Войти как разработчик</button><p><a class="link" href="/catalog/">Вернуться в каталог</a></p>');
     return;
   }
-  if (me.role === "business") await businessView();
+  if (me.role === "business") return businessView();
   else if (me.role === "developer") await developerView();
   else await adminView();
   draftView();
@@ -295,34 +305,8 @@ root.addEventListener("click", async (event) => {
     authView();
     return;
   }
-  if (!button.dataset.delete && !button.dataset.download) return;
-  button.disabled = true;
-  try {
-    if (button.dataset.delete) {
-      if (!confirm("Удалить документ из хранилища и движка?")) return;
-      await request("/files/" + button.dataset.delete, { method: "DELETE" });
-      tell("Документ удалён.");
-      await render();
-    } else {
-      const file = files.find((f) => f.id === button.dataset.download);
-      const blob = await request("/files/" + file.id + "/download", {
-        binary: true,
-      });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = file.original_name;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }
-  } catch (error) {
-    tell(error.message, true);
-  } finally {
-    button.disabled = false;
-  }
 });
 root.addEventListener("submit", async (event) => {
-  if (event.target.id === "integration-create") return;
   event.preventDefault();
   const form = event.target,
     button = event.submitter || form.querySelector("button"),
@@ -369,13 +353,6 @@ root.addEventListener("submit", async (event) => {
       renderBusiness(agents.find((agent) => agent.id === connection.agent_id)?.slug);
       draftView();
       root.querySelector("#integration-history")?.scrollIntoView({ behavior: "smooth" });
-    } else if (form.id === "upload") {
-      const file = data.get("file");
-      if (!file.size || file.size > 10 * 1024 * 1024)
-        throw new Error("Выберите непустой файл до 10 MiB.");
-      await request("/files/upload", { method: "POST", body: data });
-      tell("Документ загружен.");
-      await render();
     } else if (form.id === "run") {
       button.textContent = "Агент выполняет запрос…";
       const result = await request(
