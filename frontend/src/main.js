@@ -6,7 +6,7 @@ import { setupFx, splitWords, trackProgress, onScrollFx } from './fx.js';
 import { setupSmoothScroll, pauseScroll, splitHeading, setupPrism, onScrollPrism } from './prism.js';
 import './glass-nav.js';
 import { submitDeveloperApplication, submitConnectionRequest, session, request, saveSession } from './api.js';
-import { consumeAuthNotice, consumeAuthAgent, consumePublicationIntent } from './auth-navigation.js';
+import { consumeAuthAgent, consumePublicationIntent } from './auth-navigation.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -108,7 +108,11 @@ function showToast(msg) {
 
 function updateAccountLink() {
   const link = $('[data-account-link]');
-  if (link) link.textContent = session() ? t('nav.account') : t('nav.login');
+  if (link) {
+    const active = session();
+    link.textContent = active ? t('nav.account') : t('nav.login');
+    link.href = active ? accountDestination : '/account/';
+  }
 }
 window.addEventListener('keme-session-changed', updateAccountLink);
 
@@ -527,41 +531,16 @@ $$('[data-spot]').forEach((el) => {
 if (!reducedMotion) trackProgress($('#platform'), '--pe', { start: 1.05, span: 0.55 });
 setupFigure();
 setupEndingWave();
-applyLang(lang);
-const arrival = new URL(location.href);
-const authNotice = consumeAuthNotice();
-const feedback = $('#auth-feedback');
 const authAgent = consumeAuthAgent();
 const authPublish = consumePublicationIntent();
-if (authNotice) {
-  feedback.hidden = false;
-  feedback.textContent = t(authNotice === 'confirm_email' ? 'auth.confirm' : authNotice === 'registered' ? 'auth.registered' : 'auth.welcome');
-  if (authNotice === 'confirm_email') {
-    const confirmLink = document.createElement('a');
-    confirmLink.className = 'auth-resume';
-    confirmLink.href = `/account/?mode=confirm${authAgent ? `&agent=${encodeURIComponent(authAgent)}` : ''}${authPublish ? '&intent=publish' : ''}`;
-    confirmLink.textContent = t('auth.confirmLink');
-    feedback.append(confirmLink);
-  }
-}
-if (authAgent && authNotice !== 'confirm_email') {
-  feedback.hidden = false;
-  const resume = document.createElement('a'); resume.className = 'auth-resume';
-  resume.href = `/account/?agent=${encodeURIComponent(authAgent)}&intent=connect`;
-  resume.textContent = t('action.resumeConnect'); feedback.append(resume);
-}
-try {
-  const draft = JSON.parse(sessionStorage.getItem('keme-draft'));
-  if (session() && (authPublish || ['dev', 'conn'].includes(draft?.kind))) {
-    feedback.hidden = false;
-    const resume = document.createElement('a');
-    resume.className = 'auth-resume';
-    const publish = authPublish || draft?.kind === 'dev';
-    resume.href = `/account/?intent=${publish ? 'publish#submission' : 'connect'}`;
-    resume.textContent = t(publish ? 'action.resumePublish' : 'action.resumeConnect');
-    feedback.append(resume);
-  }
-} catch { /* A missing draft does not affect the account. */ }
+let accountDestination = '/account/';
+let draftKind;
+try { draftKind = JSON.parse(sessionStorage.getItem('keme-draft'))?.kind; } catch { /* Storage is optional. */ }
+if (authPublish || draftKind === 'dev') accountDestination = '/account/?intent=publish#submission';
+else if (authAgent) accountDestination = `/account/?agent=${encodeURIComponent(authAgent)}&intent=connect`;
+else if (draftKind === 'conn') accountDestination = '/account/?intent=connect';
+applyLang(lang);
+const arrival = new URL(location.href);
 if (session()) request('/auth/me').then(profile => {
   const current = session();
   if (current && (!current.profile?.user_id || current.profile.user_id === profile.user_id)) saveSession({ ...current, profile });

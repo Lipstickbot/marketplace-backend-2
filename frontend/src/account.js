@@ -75,7 +75,7 @@ function rememberConfirmationEmail(email) {
 
 function confirmationView() {
   root.innerHTML = panel("Подтвердите почту", `
-    <p class="muted">Откройте ссылку из письма или введите код, если он указан. Если письмо не пришло, проверьте спам и запросите его ещё раз.</p>
+    <p class="muted">Введите код из письма. Если письма нет во входящих, проверьте папку «Спам».</p>
     <form id="confirm-email" class="work-form">
       <label>Почта<input name="email" type="email" autocomplete="email" value="${e(confirmationEmail)}" maxlength="254" required></label>
       <label>Код из письма<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required></label>
@@ -86,6 +86,17 @@ function confirmationView() {
     </form>
     <button type="button" class="auth-text-button" data-auth="login">Вернуться ко входу</button>
   `);
+}
+
+function openConfirmation(email) {
+  rememberConfirmationEmail(email);
+  authMode = "confirm";
+  const url = new URL(location.href);
+  url.searchParams.set("mode", "confirm");
+  history.replaceState(null, "", url);
+  authView();
+  root.querySelector("[name=code]").focus({ preventScroll: true });
+  window.scrollTo(0, 0);
 }
 
 function authView() {
@@ -105,8 +116,7 @@ function authView() {
         <div class="auth-fields"><label>Ваше имя<input name="display_name" autocomplete="name" maxlength="120"></label><label>Компания<input name="company_name" autocomplete="organization" maxlength="200"></label></div>
         ${intent === "publish" ? '<input type="hidden" name="role" value="business">' : '<label>Что хотите делать?<select name="role"><option value="business">Подключать агентов для бизнеса</option><option value="developer">Добавлять своих агентов</option></select></label>'}` : ""}
       <button type="submit" class="btn btn--primary">${registering ? "Зарегистрироваться" : "Войти"}</button>
-    </form>
-    ${registering ? "" : '<button type="button" class="auth-text-button" data-auth="confirm">Подтвердить почту или запросить письмо</button>'}`,
+    </form>`,
   );
   const purpose = document.createElement("p"); purpose.className = "muted";
   purpose.textContent = intent === "publish" ? "Добавьте собственного агента в каталог: опишите возможности и отправьте заявку на рассмотрение." : intent === "connect" ? "Выберите готового агента из каталога и отправьте запрос на подключение для своей компании." : "Вход сохранится на этом устройстве, пока вы не нажмёте «Выйти».";
@@ -340,6 +350,10 @@ root.addEventListener("click", async (event) => {
     const email = root.querySelector("#auth [name=email]")?.value.trim();
     if (email) rememberConfirmationEmail(email);
     authMode = button.dataset.auth;
+    const url = new URL(location.href);
+    if (authMode === "signup") url.searchParams.set("mode", "signup");
+    else url.searchParams.delete("mode");
+    history.replaceState(null, "", url);
     tell();
     authView();
     return;
@@ -359,19 +373,18 @@ root.addEventListener("submit", async (event) => {
       if (authMode === "login") {
         await login(value);
         rememberConfirmationEmail("");
-        goHomeAfterAuth("signed_in"); return;
+        goHomeAfterAuth(); return;
       }
       else {
         const result = await signup(value);
         if (result.status === "confirmation_required") {
-          rememberConfirmationEmail(value.email);
           form.reset();
-          goHomeAfterAuth("confirm_email");
+          openConfirmation(value.email);
           return;
         }
       }
       rememberConfirmationEmail("");
-      goHomeAfterAuth("registered"); return;
+      goHomeAfterAuth(); return;
     } else if (form.id === "confirm-email") {
       if (!form.elements.email.reportValidity()) return;
       rememberConfirmationEmail(value.email);
@@ -382,7 +395,7 @@ root.addEventListener("submit", async (event) => {
         const result = await request("/auth/email/verify", { method: "POST", auth: false, body: value });
         saveSession(result);
         rememberConfirmationEmail("");
-        goHomeAfterAuth("registered");
+        goHomeAfterAuth();
         return;
       }
     } else if (form.id === "connect") {
@@ -443,9 +456,8 @@ root.addEventListener("submit", async (event) => {
     }
   } catch (error) {
     if (form.id === "auth" && error.code === "email_not_confirmed") {
-      rememberConfirmationEmail(value.email);
-      authMode = "confirm";
-      authView();
+      openConfirmation(value.email);
+      return;
     }
     tell(
       error.message +
@@ -478,7 +490,7 @@ async function initialize() {
   if (returningFromConfirmation && !session()) {
     tell(confirmationFailed ? "Ссылка недействительна или истекла. Запросите новое письмо." : "Войдите с почтой и паролем, чтобы открыть аккаунт.", confirmationFailed);
   }
-  try { if (await finishGoogleLogin()) { goHomeAfterAuth("signed_in"); return; } }
+  try { if (await finishGoogleLogin()) { rememberConfirmationEmail(""); goHomeAfterAuth(); return; } }
   catch (error) { tell(error.message, true); }
   await render();
 }

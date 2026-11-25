@@ -1116,6 +1116,4 @@ html.lenis, html.lenis body { height: auto; }
 }
 .directory-head { position: relative; padding-right: 230px; }
 .directory-add { position: absolute; right: 0; top: 14px; font-size: 16px; }
-.auth-feedback { position: relative; z-index: 4; margin-top: 100px; padding: 18px 24px; background: #e7f4ff; border: 1px solid #b3d1ed; border-radius: 16px; font-size: 17px; line-height: 1.6; }
-.auth-resume { display: block; margin-top: 8px; color: #1656d8; font-weight: 600; text-decoration: underline; }
 @media (max-width: 720px) { .directory-head { padding-right: 0; } .directory-add { position: static; margin-top: 22px; } }

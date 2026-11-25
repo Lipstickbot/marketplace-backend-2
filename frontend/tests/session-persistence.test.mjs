@@ -67,12 +67,14 @@ test("a refresh response cannot restore a session cleared during logout",async()
   await assert.rejects(inFlight);assert.equal(api.session(),null);assert.equal(device.has("keme-session"),false);
 });
 
-test("auth outcomes return to the homepage with a one-use notice",async()=>{
+test("successful authentication returns home without an announcement and preserves publication intent",async()=>{
   const nav=await import("../src/auth-navigation.js");let target;
-  globalThis.location={replace:u=>{target=u;}};
-  for(const reason of ["registered","signed_in","confirm_email"]) {
-    nav.goHomeAfterAuth(reason);assert.equal(target,"/");assert.equal(nav.consumeAuthNotice(),reason);assert.equal(nav.consumeAuthNotice(),null);
-  }
+  globalThis.location={href:"https://example.com/account/?intent=publish",replace:u=>{target=u;}};
+  nav.goHomeAfterAuth();
+  assert.equal(target,"/");
+  assert.equal(sessionStorage.getItem("keme-auth-notice"),null);
+  assert.equal(nav.consumePublicationIntent(),true);
+  assert.equal(nav.consumePublicationIntent(),false);
 });
 
 test("selected agent survives homepage redirect without accepting arbitrary return URLs",async()=>{
