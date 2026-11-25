@@ -19,8 +19,8 @@ function copyField(id, name, value = "", secret = false) {
 
 function integrationRecord(row, agentName) {
   const expiry = Date.parse(row.expires_at);
-  const inactive = Boolean(row.revoked_at) || expiry <= Date.now();
-  const state = row.revoked_at ? "Ключ отозван" : inactive ? "Срок истёк" : "Активно до " + new Date(expiry).toLocaleDateString();
+  const expired = expiry <= Date.now();
+  const state = expired ? "Срок истёк" : "Активно до " + new Date(expiry).toLocaleDateString();
   return `<article class="work-item integration-record">
     <div class="integration-record-head">
       <div><h3>${e(row.name)}</h3><p class="muted">${e(agentName)} · Ключ ${e(row.key_prefix)}… · Создано ${e(new Date(row.created_at).toLocaleDateString())}</p></div>
@@ -30,7 +30,7 @@ function integrationRecord(row, agentName) {
       ${copyField(`history-url-${row.id}`, "Base URL", integrationBase(row.agent_slug))}
       ${copyField(`history-model-${row.id}`, "Model", `keme/${row.agent_slug}`)}
     </div>
-    ${inactive ? "" : `<button class="btn btn--secondary" type="button" data-revoke-integration="${e(row.id)}">Отозвать ключ</button>`}
+    ${expired ? "" : `<button class="btn btn--secondary" type="button" data-revoke-integration="${e(row.id)}">Отозвать ключ</button>`}
   </article>`;
 }
 
@@ -64,6 +64,7 @@ export async function setupIntegrationHistory(grid, agents, connections, tell, s
     </div>`;
   grid.append(history);
   const list = history.querySelector("#integration-list");
+  const emptyHistory = '<p class="muted">API-подключений пока нет.</p>';
   let historyRequest = 0;
   async function showList() {
     const sequence = ++historyRequest;
@@ -71,10 +72,10 @@ export async function setupIntegrationHistory(grid, agents, connections, tell, s
     try {
       const rows = await request("/integrations");
       if (sequence !== historyRequest) return;
-      list.innerHTML = rows.map((row) => {
+      list.innerHTML = rows.filter((row) => !row.revoked_at).map((row) => {
         const agentName = agents.find((agent) => agent.slug === row.agent_slug)?.name || row.agent_slug;
         return integrationRecord(row, agentName);
-      }).join("") || '<p class="muted">API-подключений пока нет.</p>';
+      }).join("") || emptyHistory;
     } catch {
       if (sequence !== historyRequest) return;
       list.innerHTML = '<p class="muted">Не удалось загрузить историю.</p><button type="button" class="btn btn--secondary" data-reload-integration-history>Повторить</button>';
@@ -94,8 +95,9 @@ export async function setupIntegrationHistory(grid, agents, connections, tell, s
       button.disabled = true;
       try {
         await request("/integrations/" + button.dataset.revokeIntegration, {method:"DELETE"});
-        tell("Ключ отозван. Новые API-запросы с ним запрещены.");
-        await showList();
+        button.closest(".integration-record").remove();
+        if (!list.firstElementChild) list.innerHTML = emptyHistory;
+        tell("Ключ отозван.");
       } catch(error) { tell(error.message,true); button.disabled = false; }
     }
   });
