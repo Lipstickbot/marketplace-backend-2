@@ -808,8 +808,27 @@ html.lenis, html.lenis body { height: auto; }
 
 
 /* =========================================================
-   CINEMATIC LAYER: grain, vignette, focus, light, depth
+   CINEMATIC LAYER: intro, grain, vignette, focus, light, depth
    ========================================================= */
+/* opening shot: a dark frame opens like a letterbox, the mark glows first */
+.intro { position: fixed; inset: 0; z-index: 300; pointer-events: none; }
+.intro__bar { position: absolute; left: 0; right: 0; height: 50.5%; background: radial-gradient(120% 140% at 50% 100%, #12264a, var(--navy) 60%); }
+.intro__bar--t { top: 0; transform-origin: top; animation: introOpen 1.15s cubic-bezier(.76,0,.24,1) .95s forwards; }
+.intro__bar--b { bottom: 0; transform-origin: bottom; animation: introOpen 1.15s cubic-bezier(.76,0,.24,1) .95s forwards; background: radial-gradient(120% 140% at 50% 0%, #12264a, var(--navy) 60%); }
+.intro__bar--t::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: linear-gradient(90deg, transparent, rgba(140,196,255,.9), transparent); filter: blur(1px); opacity: 0; animation: introSlit .9s ease .55s forwards; }
+.intro__mark { position: absolute; left: 50%; top: 50%; width: 64px; height: 64px; margin: -32px 0 0 -32px; opacity: 0; filter: drop-shadow(0 0 24px rgba(90,170,255,.7)); animation: introMark 1.3s cubic-bezier(.2,.7,.2,1) .1s forwards; }
+@keyframes introOpen { to { transform: scaleY(0); } }
+@keyframes introSlit { 40% { opacity: 1; } 100% { opacity: 1; } }
+@keyframes introMark { 0% { opacity: 0; transform: scale(.85); filter: blur(8px) drop-shadow(0 0 24px rgba(90,170,255,.7)); } 45% { opacity: 1; transform: scale(1); filter: blur(0) drop-shadow(0 0 24px rgba(90,170,255,.7)); } 80% { opacity: 1; } 100% { opacity: 0; transform: scale(1.06); filter: blur(6px); } }
+/* the hero waits for the frame to open */
+.intro-play .hero .sw__i { transition-delay: calc(1.25s + var(--i) * 55ms); }
+.intro-play .hero [data-reveal] { transition-delay: 1.55s; }
+.intro-play .hero .lead[data-reveal] { transition-delay: 1.7s; }
+.intro-play .hero .cta-row[data-reveal] { transition-delay: 1.85s; }
+.intro-play .hero .hero__demos[data-reveal] { transition-delay: 2s; }
+.intro-play .nav { animation: navIn 1s cubic-bezier(.2,.7,.2,1) 1.5s both; }
+@keyframes navIn { from { opacity: 0; transform: translateY(-14px); filter: blur(6px); } }
+.intro-play .figure { transition-delay: 1.2s; }
 
 /* film grain + vignette */
 .grain { position: fixed; inset: -120px; z-index: 250; pointer-events: none; opacity: .5; mix-blend-mode: soft-light;
@@ -1019,7 +1038,7 @@ html.lenis, html.lenis body { height: auto; }
   .pcol .pcard.in { translate: none; }
   .rw { opacity: 1 !important; transition: none; }
   .footer__hint { display: none; }
-  .grain { display: none; }
+  .intro, .grain { display: none; }
   .hero { filter: none; opacity: 1; transform: none; }
   [data-reveal], .sw__i { filter: none; }
   .orb, .figure::after { animation: none; }

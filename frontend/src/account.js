@@ -34,7 +34,7 @@ const labels = {
 };
 const status = (v) => labels[v] || v;
 const connectionNotice = (state) => state === "approved"
-  ? "Агент подключён. Настройте API или попробуйте его в кабинете."
+  ? "Агент подключён. Для настройки API нажмите «Открыть агента» в истории."
   : "Заявка отправлена на рассмотрение.";
 const panel = (title, body, wide = false) =>
   `<section class="work-panel ${wide ? "wide" : ""}"><h2>${title}</h2>${body}</section>`;
@@ -153,7 +153,7 @@ function renderBusiness(chosen = new URLSearchParams(location.search).get("agent
   </div>`;
 
   const grid = root.querySelector(".work-grid");
-  void setupIntegrations(root, agents, connections, files, tell, status, chosen);
+  void setupIntegrations(root, agents, connections, files, tell, status);
   if (approved.length) renderTrialRun(grid, approved, chosen);
   grid.insertAdjacentHTML("beforeend", `<details class="work-panel wide workspace-details" id="run-history"><summary>История запусков</summary><div id="runs" aria-live="polite"></div></details>`);
   const history = grid.querySelector("#run-history");

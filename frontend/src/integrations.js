@@ -37,7 +37,12 @@ function integrationRecord(row, agentName) {
 function connectionRecord(connection, agent, statusLabel) {
   const agentName = agent?.name || "Агент недоступен";
   const canOpen = agent?.status === "published" || agent?.status === "coming_soon";
-  const link = canOpen ? `${agentLink(agent.slug)}${connection.status === "approved" && agent.status === "published" ? "#application-integrations" : ""}` : "";
+  const link = canOpen ? new URL(agentLink(agent.slug)) : null;
+  if (link && connection.status === "approved" && agent.status === "published") {
+    // The view parameter makes opening an agent on its own account page a navigation.
+    link.searchParams.set("view", "integration");
+    link.hash = "application-integrations";
+  }
   return `<li class="connection-record">
     <div><strong>${e(agentName)}</strong>${connection.review_note ? `<p class="muted">${e(connection.review_note)}</p>` : ""}</div>
     <span class="pill connection-status" data-state="${e(connection.status)}">${e(statusLabel(connection.status))}</span>
@@ -45,11 +50,18 @@ function connectionRecord(connection, agent, statusLabel) {
   </li>`;
 }
 
-export async function setupIntegrations(root, agents, connections, files, tell, statusLabel, chosen) {
-  const approved = agents.filter(a => a.status === "published" && connections.some(c => c.agent_id === a.id && c.status === "approved"));
+export async function setupIntegrations(root, agents, connections, files, tell, statusLabel) {
+  const url = new URL(location.href);
+  const chosen = url.searchParams.get("agent");
+  const openingAgent = url.searchParams.get("view") === "integration" || url.hash === "#application-integrations";
+  const agent = openingAgent && agents.find(a => a.slug === chosen && a.status === "published"
+    && connections.some(c => c.agent_id === a.id && c.status === "approved"));
   const host = document.createElement("section");
   host.className = "work-panel wide"; host.id = "application-integrations";
-  host.innerHTML = `<h2>Подключить к своему приложению</h2><p class="muted">Создайте подключение для конкретной задачи. Агент будет использовать выбранные документы и инструкции при каждом API-запросе.</p>${approved.length ? `<form class="work-form" id="integration-create"><div class="integration-fields"><label>Агент<select name="agent_slug">${approved.map(a => `<option value="${e(a.slug)}" ${a.slug === chosen ? "selected" : ""}>${e(a.name)}</option>`).join("")}</select></label><label>Название подключения<input name="name" required maxlength="120" placeholder="Например, поддержка моего магазина"></label></div><label>Задача и правила для агента<textarea name="task" maxlength="2000" placeholder="Что агент должен делать, каким тоном отвечать и какие правила учитывать"></textarea></label><div class="integration-fields"><label>Язык ответов<select name="language"><option value="auto">Автоматически</option><option value="ru">Русский</option><option value="kk">Қазақша</option><option value="en">English</option></select></label><label>Срок действия ключа<select name="expires_in_days"><option value="30">30 дней</option><option value="90" selected>90 дней</option><option value="365">1 год</option></select></label></div><fieldset><legend>Документы для этой задачи</legend>${files.filter(f => !f.deletion_requested_at).map(f => `<label data-integration-purpose="${e(f.purpose)}"><input type="checkbox" name="file_ids" value="${e(f.id)}">${e(f.original_name)}</label>`).join("") || '<p class="muted">Сначала загрузите документы в разделе выше, если они нужны агенту.</p>'}</fieldset><button class="btn btn--primary" type="submit">Создать API-подключение</button></form>` : '<p class="muted">Подключите агента в разделе выше. Когда доступ откроется, здесь появится настройка API.</p>'}<div class="integration-credentials" id="integration-new" hidden></div><details class="integration-guide"><summary>Как подключить к приложению или LLM-клиенту</summary><ol><li>Выберите провайдера OpenAI-compatible / Custom OpenAI.</li><li>Укажите Base URL и имя модели из созданного подключения.</li><li>В поле API key вставьте отдельный ключ Keme AI.</li><li>Отключите streaming. Поддерживаются текстовые сообщения.</li></ol><p class="muted">Это готовый агент со своей специализацией. Его нельзя заменить произвольной моделью. Веб-сайт должен вызывать API через свой сервер, чтобы ключ не попадал в публичный код. Ключ можно отозвать здесь в любой момент.</p></details>`;
+  if (agent) {
+    const documents = files.filter(f => !f.deletion_requested_at && agent.accepted_file_purposes.includes(f.purpose));
+    host.innerHTML = `<h2>Подключить к своему приложению</h2><p class="muted">Создайте подключение для конкретной задачи. Агент будет использовать выбранные документы и инструкции при каждом API-запросе.</p><form class="work-form" id="integration-create"><div class="integration-fields"><label>Агент<input value="${e(agent.name)}" readonly></label><label>Название подключения<input name="name" required maxlength="120" placeholder="Например, поддержка моего магазина"></label></div><label>Задача и правила для агента<textarea name="task" maxlength="2000" placeholder="Что агент должен делать, каким тоном отвечать и какие правила учитывать"></textarea></label><div class="integration-fields"><label>Язык ответов<select name="language"><option value="auto">Автоматически</option><option value="ru">Русский</option><option value="kk">Қазақша</option><option value="en">English</option></select></label><label>Срок действия ключа<select name="expires_in_days"><option value="30">30 дней</option><option value="90" selected>90 дней</option><option value="365">1 год</option></select></label></div><fieldset><legend>Документы для этой задачи</legend>${documents.map(f => `<label><input type="checkbox" name="file_ids" value="${e(f.id)}">${e(f.original_name)}</label>`).join("") || '<p class="muted">Сначала загрузите документы в разделе выше, если они нужны агенту.</p>'}</fieldset><button class="btn btn--primary" type="submit">Создать API-подключение</button></form><div class="integration-credentials" id="integration-new" hidden></div><details class="integration-guide"><summary>Как подключить к приложению или LLM-клиенту</summary><ol><li>Выберите провайдера OpenAI-compatible / Custom OpenAI.</li><li>Укажите Base URL и имя модели из созданного подключения.</li><li>В поле API key вставьте отдельный ключ Keme AI.</li><li>Отключите streaming. Поддерживаются текстовые сообщения.</li></ol><p class="muted">Это готовый агент со своей специализацией. Его нельзя заменить произвольной моделью. Веб-сайт должен вызывать API через свой сервер, чтобы ключ не попадал в публичный код. Ключ можно отозвать здесь в любой момент.</p></details>`;
+  }
   const grid = root.querySelector(".work-grid");
   const history = document.createElement("section");
   history.className = "work-panel wide";
@@ -63,17 +75,10 @@ export async function setupIntegrations(root, agents, connections, files, tell, 
       <h3>API-подключения</h3>
       <div id="integration-list" aria-live="polite">Загрузка…</div>
     </div>`;
-  grid.append(host, history);
+  if (agent) grid.append(host);
+  grid.append(history);
   const box = host.querySelector("#integration-new");
   const list = history.querySelector("#integration-list");
-  const sync = () => {
-    const a = approved.find(a => a.slug === host.querySelector("[name=agent_slug]")?.value);
-    host.querySelectorAll("[data-integration-purpose]").forEach(label => {
-      label.hidden = !a?.accepted_file_purposes.includes(label.dataset.integrationPurpose);
-      if (label.hidden) label.querySelector("input").checked = false;
-    });
-  };
-  host.querySelector("[name=agent_slug]")?.addEventListener("change", sync); sync();
   let historyRequest = 0;
   async function showList() {
     const sequence = ++historyRequest;
@@ -96,7 +101,7 @@ export async function setupIntegrations(root, agents, connections, files, tell, 
     try {
       const data = new FormData(form);
       const result = await request("/integrations", { method:"POST", body: {
-        agent_slug:data.get("agent_slug"),name:data.get("name"),task:data.get("task"),language:data.get("language"),
+        agent_slug:agent.slug,name:data.get("name"),task:data.get("task"),language:data.get("language"),
         expires_in_days:Number(data.get("expires_in_days")),file_ids:data.getAll("file_ids"),
       }});
       const { agent_slug: slug, expires_at: expiresAt, id } = result.integration;
@@ -135,7 +140,7 @@ export async function setupIntegrations(root, agents, connections, files, tell, 
       button.disabled = true;
       try {
         await request("/integrations/" + button.dataset.revokeIntegration, {method:"DELETE"});
-        if (box.dataset.integrationId === button.dataset.revokeIntegration) {
+        if (box?.dataset.integrationId === button.dataset.revokeIntegration) {
           box.hidden = true;
           box.replaceChildren();
           delete box.dataset.integrationId;

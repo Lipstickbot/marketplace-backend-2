@@ -33,6 +33,16 @@ let navPill = null;
 if (!reducedMotion) {
   $$('h1.display[data-reveal], .h2[data-reveal]').forEach((el) => { el.removeAttribute('data-reveal'); el.setAttribute('data-split', ''); });
 }
+// cinematic intro (pure CSS animation): hero waits for the bars to open, then the intro is dropped
+const intro = $('.intro');
+if (intro) {
+  if (reducedMotion) intro.remove();
+  else {
+    document.documentElement.classList.add('intro-play');
+    setTimeout(() => intro.remove(), 2300);
+    setTimeout(() => document.documentElement.classList.remove('intro-play'), 3600);
+  }
+}
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 
 function applyLang(next) {
@@ -508,10 +518,7 @@ $$('[data-spot]').forEach((el) => {
   }, { passive: true });
 });
 if (!reducedMotion) trackProgress($('#platform'), '--pe', { start: 1.05, span: 0.55 });
-if (!reducedMotion && !navigator.connection?.saveData) {
-  if (window.requestIdleCallback) window.requestIdleCallback(setupFigure);
-  else requestAnimationFrame(() => setTimeout(setupFigure, 0));
-}
+setupFigure();
 navPill = setupNavPill($('.nav__links'));
 setupEndingWave();
 applyLang(lang);
