@@ -33,6 +33,9 @@ const labels = {
   escalation_required: "Нужен ответ сотрудника",
 };
 const status = (v) => labels[v] || v;
+const connectionNotice = (state) => state === "approved"
+  ? "Агент подключён. Настройте API или попробуйте его в кабинете."
+  : "Заявка отправлена на рассмотрение.";
 const panel = (title, body, wide = false) =>
   `<section class="work-panel ${wide ? "wide" : ""}"><h2>${title}</h2>${body}</section>`;
 const accountUrl = new URL(location.href);
@@ -137,18 +140,20 @@ async function businessView() {
     all("/connect-requests"),
     all("/files"),
   ]);
+  renderBusiness();
+}
+function renderBusiness(chosen = new URLSearchParams(location.search).get("agent")) {
   const published = agents.filter((a) => a.status === "published");
   const approved = published.filter((a) => connections.some((c) => c.agent_id === a.id && c.status === "approved"));
-  const chosen = new URLSearchParams(location.search).get("agent");
   const options = published
     .map((a) => `<option value="${e(a.id)}" ${a.slug === chosen ? "selected" : ""}>${e(a.name)}</option>`)
     .join("");
-  root.innerHTML = `<div class="work-grid">${panel("Подключить готового агента", `<p class="muted">Выберите агента и опишите задачу для вашей компании.</p><form id="connect" class="work-form"><label>Агент<select name="agent_id">${options}</select></label><label>Задача<textarea name="message" maxlength="4000"></textarea></label><button class="btn btn--primary">Запросить подключение</button></form>`)}
+  root.innerHTML = `<div class="work-grid">${panel("Подключить готового агента", `<p class="muted">Выберите агента и опишите задачу для своей компании. Доступ к демо-агентам открывается сразу.</p><form id="connect" class="work-form"><label>Агент<select name="agent_id">${options}</select></label><label>Задача<textarea name="message" maxlength="4000"></textarea></label><button class="btn btn--primary">Подключить агента</button></form>`)}
   ${panel("Документы", `<p class="muted">PDF, DOCX или TXT до 10 MiB. Для проверки используйте вымышленные данные.</p><form id="upload" class="work-form"><label>Файл<input name="file" type="file" accept=".pdf,.docx,.txt" required></label><label>Назначение<select name="purpose"><option value="brief">Бриф Marketing</option><option value="knowledge_base">База знаний Support</option><option value="resume">Резюме HR</option><option value="job_description">Вакансия HR</option></select></label><button class="btn btn--secondary">Загрузить</button></form>${files.map((f) => `<div class="work-item"><strong>${e(f.original_name)}</strong><p class="muted">${e(f.purpose)} · ${f.engine_file_id ? "Синхронизирован" : "Ожидает синхронизации"}</p><div class="work-row"><button class="btn btn--secondary" data-download="${e(f.id)}">Скачать</button><button class="btn btn--secondary" data-delete="${e(f.id)}">Удалить</button></div></div>`).join("")}`)}
   </div>`;
 
   const grid = root.querySelector(".work-grid");
-  const integrationsReady = setupIntegrations(root, agents, connections, files, tell, status);
+  void setupIntegrations(root, agents, connections, files, tell, status, chosen);
   if (approved.length) renderTrialRun(grid, approved, chosen);
   grid.insertAdjacentHTML("beforeend", `<details class="work-panel wide workspace-details" id="run-history"><summary>История запусков</summary><div id="runs" aria-live="polite"></div></details>`);
   const history = grid.querySelector("#run-history");
@@ -157,7 +162,6 @@ async function businessView() {
   });
   if (location.hash === "#application-integrations" || location.hash === "#integration-history")
     grid.querySelector(location.hash)?.scrollIntoView();
-  await integrationsReady;
 }
 
 function renderTrialRun(grid, approved, chosen) {
@@ -239,7 +243,7 @@ function draftView() {
     const result = await submitDraft(draft.kind, draft.data);
     if (result.ok) {
       sessionStorage.removeItem("keme-draft");
-      tell("Заявка отправлена.");
+      tell(draft.kind === "conn" ? connectionNotice(result.status) : "Заявка отправлена.");
       await render();
     } else {
       tell(result.error, true);
@@ -359,9 +363,11 @@ root.addEventListener("submit", async (event) => {
         return;
       }
     } else if (form.id === "connect") {
-      await request("/connect-requests", { method: "POST", body: value });
-      tell("Заявка отправлена.");
-      await render();
+      const connection = await request("/connect-requests", { method: "POST", body: value });
+      connections.unshift(connection);
+      tell(connectionNotice(connection.status));
+      renderBusiness(agents.find((agent) => agent.id === connection.agent_id)?.slug);
+      draftView();
       root.querySelector("#integration-history")?.scrollIntoView({ behavior: "smooth" });
     } else if (form.id === "upload") {
       const file = data.get("file");

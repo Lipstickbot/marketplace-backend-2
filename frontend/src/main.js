@@ -33,16 +33,6 @@ let navPill = null;
 if (!reducedMotion) {
   $$('h1.display[data-reveal], .h2[data-reveal]').forEach((el) => { el.removeAttribute('data-reveal'); el.setAttribute('data-split', ''); });
 }
-// cinematic intro (pure CSS animation): hero waits for the bars to open, then the intro is dropped
-const intro = $('.intro');
-if (intro) {
-  if (reducedMotion) intro.remove();
-  else {
-    document.documentElement.classList.add('intro-play');
-    setTimeout(() => intro.remove(), 2300);
-    setTimeout(() => document.documentElement.classList.remove('intro-play'), 3600);
-  }
-}
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 
 function applyLang(next) {
@@ -429,7 +419,8 @@ async function handleSubmit(e) {
   done.hidden = false;
   done.classList.toggle('is-mock', !!res.mock);
   $('#doneTitle').textContent = res.mock ? t('f.mock.title') : t('f.ok.title');
-  $('#doneText').textContent = res.mock ? t('f.mock.text') : t(form.dataset.form === 'dev' ? 'f.ok.dev' : 'f.ok.conn');
+  const confirmation = form.dataset.form === 'dev' ? 'f.ok.dev' : res.status === 'approved' ? 'f.ok.connected' : 'f.ok.conn';
+  $('#doneText').textContent = res.mock ? t('f.mock.text') : t(confirmation);
   if (!res.mock) form.reset();
   done.querySelector('[data-close]').focus();
 }
@@ -517,7 +508,10 @@ $$('[data-spot]').forEach((el) => {
   }, { passive: true });
 });
 if (!reducedMotion) trackProgress($('#platform'), '--pe', { start: 1.05, span: 0.55 });
-setupFigure();
+if (!reducedMotion && !navigator.connection?.saveData) {
+  if (window.requestIdleCallback) window.requestIdleCallback(setupFigure);
+  else requestAnimationFrame(() => setTimeout(setupFigure, 0));
+}
 navPill = setupNavPill($('.nav__links'));
 setupEndingWave();
 applyLang(lang);

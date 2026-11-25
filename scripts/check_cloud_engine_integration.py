@@ -5,7 +5,6 @@ Uses real Supabase Auth/Storage/PostgreSQL and the configured mock AI Engine.
 Credentials stay in memory. A cleanup manifest contains only the test UUID.
 Engine files are deleted, but its technical run/tenant records have no delete API.
 """
-from datetime import UTC, datetime
 import json
 from pathlib import Path
 import secrets
@@ -71,11 +70,7 @@ def main(backend_url=None):
                 card = next(item for item in cards if item["engine_slug"] == slug and item["status"] == "published")
                 connection = checked(api.post("/connect-requests", headers=headers, json={"agent_id": card["id"]}),
                                      201, "business_connection_request").json()
-                # Trusted test fixture approval, not a test of the moderator UI.
-                checked(admin.patch("/rest/v1/connect_requests", params={"id": f"eq.{connection['id']}", "company_id": f"eq.{user_id}"},
-                    headers={"Prefer": "return=representation"}, json={"status": "approved", "reviewed_by": user_id,
-                    "reviewed_at": datetime.now(UTC).isoformat(), "review_note": "Disposable execution test fixture"}),
-                    200, "connection_fixture_approved")
+                assert connection["status"] == "approved" and connection["reviewed_by"] is None
 
             result = checked(api.post("/agents/marketing/run", headers=headers, json={
                 "message": "Create a content plan for a fictional coffee shop.", "language": "en"}), 200, "marketing_cloud_audit").json()

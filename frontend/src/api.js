@@ -186,13 +186,14 @@ export async function submitDraft(kind, data) {
         "/agents/" + (SLUGS[data.agent] || data.agent),
         { auth: false },
       );
-      await request("/connect-requests", {
+      const connection = await request("/connect-requests", {
         method: "POST",
         body: {
           agent_id: card.id,
           message: `${data.need}\nКомпания: ${data.company}\nКонтакт: ${data.contact}`,
         },
       });
+      return { ok: true, status: connection.status };
     }
     return { ok: true };
   } catch (error) {

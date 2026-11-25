@@ -147,7 +147,14 @@ test('catalog is public for published/soon agents; drafts are visible to owner a
 });
 
 test('business can request a published agent only for itself, with server-controlled approval', async () => {
-  await user(ids.a, () => query('insert into public.connect_requests(company_id,requested_by,agent_id) values ($1,$1,$2)', [ids.a, ids.agent]));
+  const { rows: [connection] } = await user(ids.a, () => query(
+    'insert into public.connect_requests(company_id,requested_by,agent_id) values ($1,$1,$2) returning *',
+    [ids.a, ids.agent],
+  ));
+  assert.equal(connection.status, 'approved');
+  assert.equal(connection.auto_approved, true);
+  assert.equal(connection.reviewed_by, null);
+  assert.ok(connection.reviewed_at);
   assert.equal(await user(ids.a, () => count('public.connect_requests')), 1);
   assert.equal(await user(ids.b, () => count('public.connect_requests')), 0);
   assert.equal(await user(ids.admin, () => count('public.connect_requests')), 1);
@@ -157,8 +164,6 @@ test('business can request a published agent only for itself, with server-contro
   await denied(() => user(ids.a, () => query("update public.connect_requests set status = 'approved' where company_id = $1", [ids.a])));
   await denied(() => user(ids.dev, () => query('insert into public.connect_requests(company_id,requested_by,agent_id) values ($1,$1,$2)', [ids.dev, ids.agent])), '23514');
   await denied(() => user(ids.a, () => query('insert into public.connect_requests(company_id,requested_by,agent_id) values ($1,$1,$2)', [ids.a, ids.agent])), '23505');
-  await service(() => query(`update public.connect_requests set status = 'approved',
-    reviewed_by = $1, reviewed_at = now() where company_id = $2`, [ids.admin, ids.a]));
 });
 
 test('only developers submit; submission ownership, moderation and publication cannot be forged', async () => {
@@ -339,6 +344,8 @@ test('connection review records the real moderator, only approves published agen
     [{slug:'review-target',name:'Review Target',category:'support',status:'published',engine_slug:'review-target'}]));
   const {rows:[request]} = await user(ids.b, () => query(`insert into public.connect_requests(company_id,requested_by,agent_id)
     values ($1,$1,$2) returning *`, [ids.b,agent.id]));
+  assert.equal(request.status, 'pending');
+  assert.equal(request.auto_approved, false);
   await denied(() => user(ids.a, () => query("select public.review_connect_request($1,'approved',null)",[request.id])));
   const reviewed = await user(ids.admin, () => query("select public.review_connect_request($1,'approved','OK') as result",[request.id]));
   assert.equal(reviewed.rows[0].result.reviewed_by,ids.admin);

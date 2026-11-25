@@ -12,8 +12,15 @@ const e = (v) =>
         c
       ],
   );
+// These public demo cards are available while the live catalog is loading.
+const demoRows = [
+  [SLUGS.sup, "customer_support"],
+  [SLUGS.mkt, "marketing"],
+  [SLUGS.hr, "hr"],
+].map(([slug, category]) => ({ slug, category, engine_slug: slug, status: "published" }));
 let lang = "ru",
-  rows = [],
+  rows = demoRows,
+  catalogState = "loading",
   query = url.searchParams.get("q") || "",
   group = url.searchParams.get("group") || "all";
 try {
@@ -80,6 +87,10 @@ function results() {
     text("Агенты не найдены", "Агенттер табылмады", "No matching agents");
 }
 function render() {
+  const search = root.querySelector("#search");
+  const searchSelection = document.activeElement === search && search
+    ? [search.selectionStart, search.selectionEnd]
+    : null;
   document.documentElement.lang = lang;
   document.querySelectorAll("[data-label]").forEach((el) => {
     el.textContent = T[lang][el.dataset.label];
@@ -92,11 +103,11 @@ function render() {
   if (id) {
     const row = rows.find((r) => r.slug === (SLUGS[id] || id));
     if (!row) {
-      root.innerHTML = `<a href="/catalog/">${e(catalogCopy(lang).back)}</a><h1>${e(catalogCopy(lang).missing)}</h1>`;
+      root.innerHTML = `<a href="/catalog/">${e(catalogCopy(lang).back)}</a>${catalogState === "ready" ? `<h1>${e(catalogCopy(lang).missing)}</h1>` : catalogNotice()}`;
       return;
     }
     const a = display(row);
-    root.innerHTML = `<a class="link directory-back" href="/catalog/">${e(catalogCopy(lang).back)}</a><div class="profile-grid"><section class="profile-intro"><div class="profile-identity">${agentMark(a.id)}<span class="pill">${badge(row)}</span></div><h1 class="display">${e(a.name)}</h1><p class="lead">${e(a.task)}</p><ul class="acard__does">${a.features.map((f) => `<li>${e(f)}</li>`).join("")}</ul>${row.status === "published" ? `<a class="btn btn--primary" href="/account/?agent=${encodeURIComponent(row.slug)}">${text("Подключить под свою задачу", "Өз міндетіме қосу", "Connect for my task")}</a>` : `<p>${text("Подключение появится позже.", "Қосылу кейінірек қолжетімді болады.", "Connection will be available later.")}</p>`}</section><section class="profile-example"><h2 class="h2">${e(catalogCopy(lang).sample)}</h2><p>${e(a.input || a.task)}</p><p>${e(a.output || "")}</p><p class="note">${row.status === "published" ? text("Демонстрационный режим. Для запуска войдите и получите одобрение подключения.", "Демо режимі. Кіру және қосылуды мақұлдау қажет.", "Demo mode. Sign in and obtain connection approval before running.") : badge(row)}</p></section></div>`;
+    root.innerHTML = `<a class="link directory-back" href="/catalog/">${e(catalogCopy(lang).back)}</a><div class="profile-grid"><section class="profile-intro"><div class="profile-identity">${agentMark(a.id)}<span class="pill">${badge(row)}</span></div><h1 class="display">${e(a.name)}</h1><p class="lead">${e(a.task)}</p><ul class="acard__does">${a.features.map((f) => `<li>${e(f)}</li>`).join("")}</ul>${row.status === "published" ? `<a class="btn btn--primary" href="/account/?agent=${encodeURIComponent(row.slug)}&intent=connect">${text("Подключить под свою задачу", "Өз міндетіме қосу", "Connect for my task")}</a>` : `<p>${text("Подключение появится позже.", "Қосылу кейінірек қолжетімді болады.", "Connection will be available later.")}</p>`}</section><section class="profile-example"><h2 class="h2">${e(catalogCopy(lang).sample)}</h2><p>${e(a.input || a.task)}</p><p>${e(a.output || "")}</p><p class="note">${row.status === "published" ? text("Демонстрационный режим. Войдите в кабинет, чтобы подключить агента.", "Демо режимі. Агентті қосу үшін жеке кабинетке кіріңіз.", "Demo mode. Sign in to your workspace to connect this agent.") : badge(row)}</p></section></div>`;
     return;
   }
   const c = catalogCopy(lang);
@@ -108,8 +119,22 @@ function render() {
   root.querySelector(".directory-head").append(add);
   root.querySelector("#group").value =
     (group === "sup" ? "customer_support" : SLUGS[group]) || group;
+  if (catalogState !== "ready") root.querySelector("#count").insertAdjacentHTML("beforebegin", catalogNotice());
   results();
+  if (searchSelection) {
+    const input = root.querySelector("#search");
+    input.focus({ preventScroll: true });
+    input.setSelectionRange(...searchSelection);
+  }
 }
+function catalogNotice() {
+  return catalogState === "loading"
+    ? `<p class="muted" role="status">${text("Загружаем полный каталог…", "Толық каталог жүктелуде…", "Loading the full catalog…")}</p>`
+    : `<p class="muted" role="status">${text("Не удалось загрузить полный каталог.", "Толық каталог жүктелмеді.", "Could not load the full catalog.")} <button class="btn btn--secondary" id="retry">${text("Повторить", "Қайталау", "Retry")}</button></p>`;
+}
+root.addEventListener("click", (event) => {
+  if (event.target.closest("#retry")) load();
+});
 root.addEventListener("input", (event) => {
   if (event.target.id === "search") {
     query = event.target.value;
@@ -132,18 +157,15 @@ document.querySelector(".lang").addEventListener("click", (event) => {
   render();
 });
 async function load() {
-  root.textContent = text(
-    "Загрузка каталога…",
-    "Каталог жүктелуде…",
-    "Loading catalog…",
-  );
+  catalogState = "loading";
+  render();
   try {
     rows = await all("/agents", { auth: false });
     rows.sort((a, b) => Number(b.status === "published") - Number(a.status === "published"));
-    render();
-  } catch (error) {
-    root.innerHTML = `<h1 class="h2">${text("Каталог недоступен", "Каталог қолжетімсіз", "Catalog unavailable")}</h1><p>${e(error.message)}</p><button class="btn btn--secondary" id="retry">${text("Повторить", "Қайталау", "Retry")}</button>`;
-    root.querySelector("#retry").onclick = load;
+    catalogState = "ready";
+  } catch {
+    catalogState = "error";
   }
+  render();
 }
 load();
