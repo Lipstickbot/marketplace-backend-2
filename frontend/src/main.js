@@ -3,7 +3,8 @@ import { T, LANGS } from './i18n.js';
 import { createFlow } from './flow.js';
 import { createWave } from './wave.js';
 import { setupFx, splitWords, trackProgress, onScrollFx } from './fx.js';
-import { setupSmoothScroll, pauseScroll, setupNavPill, splitHeading, setupPrism, onScrollPrism } from './prism.js';
+import { setupSmoothScroll, pauseScroll, splitHeading, setupPrism, onScrollPrism } from './prism.js';
+import './glass-nav.js';
 import { submitDeveloperApplication, submitConnectionRequest, session, request, saveSession } from './api.js';
 import { consumeAuthNotice, consumeAuthAgent, consumePublicationIntent } from './auth-navigation.js';
 
@@ -28,7 +29,6 @@ if (!LANGS.includes(lang)) lang = 'ru';
 const t = (k) => (T[lang] && T[lang][k] !== undefined ? T[lang][k] : T.ru[k]);
 const fx = setupFx({ reducedMotion, getText: (k) => t(k) });
 setupSmoothScroll(reducedMotion);
-let navPill = null;
 // headlines rise word by word instead of fading as a block
 if (!reducedMotion) {
   $$('h1.display[data-reveal], .h2[data-reveal]').forEach((el) => { el.removeAttribute('data-reveal'); el.setAttribute('data-split', ''); });
@@ -36,11 +36,19 @@ if (!reducedMotion) {
 // cinematic intro (pure CSS animation): hero waits for the bars to open, then the intro is dropped
 const intro = $('.intro');
 if (intro) {
-  if (reducedMotion) intro.remove();
+  const dismissIntro = () => {
+    intro.remove();
+    document.documentElement.classList.remove('intro-play');
+  };
+  if (reducedMotion || (CSS.supports('selector(:active-view-transition)') &&
+      document.documentElement.matches(':active-view-transition'))) dismissIntro();
   else {
     document.documentElement.classList.add('intro-play');
     setTimeout(() => intro.remove(), 2300);
     setTimeout(() => document.documentElement.classList.remove('intro-play'), 3600);
+    window.addEventListener('pagereveal', (event) => {
+      if (event.viewTransition) dismissIntro();
+    }, { once: true });
   }
 }
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -462,7 +470,6 @@ function updateNavHide() {
 function onScroll() {
   nav.classList.toggle('is-scrolled', window.scrollY > 20);
   updateNavHide();
-  navPill?.sync();
   const sp = sceneProgress();
   sceneEl.style.setProperty('--sp', sp.toFixed(3));
   figure?.refresh();
@@ -519,7 +526,6 @@ $$('[data-spot]').forEach((el) => {
 });
 if (!reducedMotion) trackProgress($('#platform'), '--pe', { start: 1.05, span: 0.55 });
 setupFigure();
-navPill = setupNavPill($('.nav__links'));
 setupEndingWave();
 applyLang(lang);
 const arrival = new URL(location.href);

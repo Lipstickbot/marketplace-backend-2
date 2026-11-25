@@ -243,15 +243,9 @@
   .workspace-head {
     flex-direction: column;
   }
-  .directory-nav {
-    gap: 10px !important;
-    font-size: 14px;
-  }
 }
 @media (max-width: 460px) {
   .auth-fields { grid-template-columns: 1fr; }
   .connection-record { display: flex; flex-wrap: wrap; }
   .connection-record > div { flex-basis: 100%; }
-  .account-page .directory-nav { display: flex; gap: 0 !important; }
-  .account-page .directory-nav a { padding-inline: 6px; font-size: 13px; }
 }

@@ -2,6 +2,7 @@ import { LANGS, T } from "./i18n.js";
 import { all, SLUGS } from "./api.js";
 import { catalogCopy, getAgent } from "./catalog-data.js";
 import { agentMark } from "./catalog-cards.js";
+import "./glass-nav.js";
 const root = document.querySelector("#directory"),
   url = new URL(location.href);
 const e = (v) =>

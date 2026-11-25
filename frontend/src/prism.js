@@ -2,7 +2,6 @@
  * Second interaction layer, modelled on the mechanics of prismscience.org
  * (own implementation, Keme AI palette):
  *  - inertial smooth scroll (Lenis)
- *  - sliding hover pill in the nav
  *  - headlines that rise in word by word
  *  - twinkling "ticks" in section corners
  *  - glowing sticks in dark sections that grow toward the pointer
@@ -39,37 +38,6 @@ export function scrollToEl(el, offset = 76) {
   else window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - offset, behavior: 'auto' });
 }
 export const pauseScroll = (on) => { if (lenis) (on ? lenis.stop() : lenis.start()); };
-
-/* ---------------- nav: pill that slides under the hovered link ---------------- */
-export function setupNavPill(nav) {
-  if (!nav) return;
-  const pill = document.createElement('span');
-  pill.className = 'nav__pill';
-  pill.setAttribute('aria-hidden', 'true');
-  nav.prepend(pill);
-  const moveTo = (a, instant) => {
-    if (!a) { pill.style.opacity = '0'; return; }
-    if (instant) pill.style.transition = 'none';
-    pill.style.opacity = '1';
-    pill.style.width = `${a.offsetWidth}px`;
-    pill.style.transform = `translateX(${a.offsetLeft}px)`;
-    if (instant) { pill.offsetWidth; pill.style.transition = ''; }
-  };
-  let hovering = false;
-  nav.addEventListener('pointerover', (e) => {
-    const a = e.target.closest('a');
-    if (!a) return;
-    moveTo(a, !hovering && pill.style.opacity !== '1');
-    hovering = true;
-    nav.classList.add('is-hover');
-  });
-  nav.addEventListener('pointerleave', () => {
-    hovering = false;
-    nav.classList.remove('is-hover');
-    moveTo(nav.querySelector('a.is-current'));
-  });
-  return { sync() { if (!hovering) moveTo(nav.querySelector('a.is-current')); } };
-}
 
 /* ---------------- headlines rising word by word ---------------- */
 const splitIO = new IntersectionObserver((entries) => {

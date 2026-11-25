@@ -11,6 +11,7 @@ import {
 import { startGoogleLogin, finishGoogleLogin } from "./google-auth.js";
 import { goHomeAfterAuth } from "./auth-navigation.js";
 import { setupIntegrationHistory, renderIntegrationScreen } from "./integrations.js";
+import "./glass-nav.js";
 const root = document.querySelector("#workspace"),
   notice = document.querySelector("#notice"),
   workspaceTitle = document.querySelector("#workspace-title");
