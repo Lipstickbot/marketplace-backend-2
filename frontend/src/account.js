@@ -99,7 +99,7 @@ function authView() {
         <label>Что хотите делать?<select name="role"><option value="business">Подключать агентов для бизнеса</option><option value="developer">Добавлять своих агентов</option></select></label>` : ""}
       <button type="submit" class="btn btn--primary">${registering ? "Зарегистрироваться" : "Войти"}</button>
     </form>
-    <button type="button" class="auth-text-button" data-auth="confirm">Подтвердить почту или запросить письмо</button>`,
+    ${registering ? "" : '<button type="button" class="auth-text-button" data-auth="confirm">Подтвердить почту или запросить письмо</button>'}`,
   );
   const purpose = document.createElement("p"); purpose.className = "muted";
   purpose.textContent = intent === "publish" ? "Добавьте собственного агента в каталог: опишите возможности и отправьте заявку на рассмотрение." : intent === "connect" ? "Выберите готового агента из каталога и отправьте запрос на подключение для своей компании." : "Вход сохранится на этом устройстве, пока вы не нажмёте «Выйти».";

@@ -30,6 +30,7 @@ class SupabaseGateway:
             except ValueError:
                 payload = {}
             code = payload.get("error_code", "") if isinstance(payload, dict) else ""
+            message = (payload.get("msg") or payload.get("message")) if isinstance(payload, dict) else None
             if response.status_code == 429:
                 retry = response.headers.get("Retry-After", "60")
                 retry = retry if retry.isdecimal() and len(retry) < 8 else "60"
@@ -54,8 +55,11 @@ class SupabaseGateway:
                     raise APIError(*mapped[db_code])
                 if response.status_code == 403:
                     raise APIError(403, "role_forbidden", "Недостаточно прав для этого действия.")
-            if operation in {"signup", "resend"} and code in {"email_address_not_authorized", "email_provider_disabled"}:
-                raise APIError(503, "confirmation_email_unavailable", "Отправка писем подтверждения пока недоступна. Для аккаунта бизнеса можно войти через Google.")
+            if operation in {"signup", "resend"} and (
+                code in {"email_address_not_authorized", "email_provider_disabled"}
+                or (response.status_code >= 500 and message == "Error sending confirmation email")
+            ):
+                raise APIError(503, "confirmation_email_unavailable", "Не удалось отправить письмо подтверждения. Попробуйте позже.")
             if response.status_code >= 500:
                 raise APIError(503, "supabase_unavailable", "Сервис авторизации временно недоступен.")
             if operation == "login" and code == "email_not_confirmed":

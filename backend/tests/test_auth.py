@@ -190,6 +190,23 @@ def test_confirmation_code_starts_session_and_expired_code_is_not_leaked(environ
     assert data["code"] not in response.text
 
 
+@pytest.mark.parametrize("route,upstream,fields", [
+    ("/auth/signup", "/auth/v1/signup", {"password": PASSWORD}),
+    ("/auth/email/resend", "/auth/v1/resend", {}),
+])
+def test_confirmation_mailer_failure_has_specific_safe_message(environment, route, upstream, fields):
+    client, remote = environment
+    remote.overrides[("POST", upstream)] = httpx.Response(500, json={
+        "error_code": "unexpected_failure", "msg": "Error sending confirmation email",
+        "internal_error": "SMTP authentication failed: private provider detail",
+    })
+    response = client.post(route, json={"email": "user@example.com", **fields})
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "confirmation_email_unavailable"
+    assert "Не удалось отправить письмо подтверждения" in response.json()["error"]["message"]
+    assert "private provider detail" not in response.text
+
+
 @pytest.mark.parametrize("extra", [{"role": "admin"}, {"company_id": M}, {"user_id": M}, {"password": "short"}])
 def test_signup_cannot_escalate_or_inject_identity_and_never_echoes_secrets(environment, extra):
     client, remote = environment
