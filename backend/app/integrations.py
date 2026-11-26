@@ -68,8 +68,11 @@ async def approval(client, token, user, agent):
 
 
 @router.get("/integrations", response_model=list[Integration])
-async def integrations(user: Business, store: Store):
-    return await store.request("GET", TABLE, params={**owned(user), "select": PUBLIC, "order": "created_at.desc", "limit": "100"})
+async def integrations(user: Business, store: Store, agent_id: UUID | None = None):
+    filters = owned(user)
+    if agent_id is not None:
+        filters["agent_id"] = f"eq.{agent_id}"
+    return await store.request("GET", TABLE, params={**filters, "select": PUBLIC, "order": "created_at.desc", "limit": "100"})
 
 
 @router.post("/integrations", status_code=201)

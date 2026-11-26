@@ -10,7 +10,7 @@ import {
 } from "./api.js";
 import { startGoogleLogin, finishGoogleLogin } from "./google-auth.js";
 import { goHomeAfterAuth } from "./auth-navigation.js";
-import { setupIntegrationHistory, renderIntegrationScreen } from "./integrations.js";
+import { agentLink, renderConnectionHistory, renderIntegrationScreen } from "./integrations.js";
 import { formatPrice } from "./price.js";
 import { findAgent, isAnalyticsAgent } from "./analytics-agent.js";
 import "./glass-nav.js";
@@ -164,12 +164,19 @@ function renderBusinessRoute() {
     form.requestSubmit();
     return;
   }
-  const openingAgent = url.searchParams.get("view") === "integration" || url.hash === "#application-integrations";
-  if (openingAgent) {
-    workspaceTitle.textContent = "Подключить к своему приложению";
+  const view = url.searchParams.get("view");
+  const openingRun = view === "run" || url.hash === "#agent-run";
+  if (openingRun || view === "integration" || url.hash === "#application-integrations") {
     const accessible = agents.filter((a) => a.status === "published"
       && connections.some((c) => c.agent_id === a.id && c.status === "approved"));
     const agent = findAgent(accessible, url.searchParams.get("agent"));
+    if (openingRun && agent) {
+      workspaceTitle.textContent = agent.name;
+      document.title = `Запуск ${agent.name} — Keme AI`;
+      renderAgentRun(agent);
+      return;
+    }
+    workspaceTitle.textContent = "Подключить к своему приложению";
     const owner = businessDataOwner;
     renderIntegrationScreen(root, agent, files, tell, (updated) => {
       if (businessDataOwner === owner) files = updated;
@@ -205,49 +212,36 @@ function renderBusiness(chosen = new URLSearchParams(location.search).get("agent
   sync();
 
   const grid = root.querySelector(".work-grid");
-  void setupIntegrationHistory(grid, agents, connections, tell, status);
-  if (approved.length) renderTrialRun(grid, approved, chosen);
+  renderConnectionHistory(grid, agents, connections, status);
   grid.insertAdjacentHTML("beforeend", `<details class="work-panel wide workspace-details" id="run-history"><summary>История запусков</summary><div id="runs" aria-live="polite"></div></details>`);
   const history = grid.querySelector("#run-history");
   history.addEventListener("toggle", () => {
     if (history.open) showRuns();
   });
   if (location.hash === "#integration-history") grid.querySelector("#integration-history")?.scrollIntoView();
-  if (location.hash === "#agent-run") grid.querySelector("#agent-run")?.scrollIntoView();
 }
 
-function renderTrialRun(grid, approved, chosen) {
-  grid.insertAdjacentHTML("beforeend", `<details id="agent-run" class="work-panel wide workspace-details" ${isAnalyticsAgent(chosen) ? "open" : ""}><summary>Запуск агента в кабинете</summary><div class="work-grid">${panel(
-    "Запуск агента",
-    `<form id="run" class="work-form"><label>Агент<select name="slug">${approved.map((a) => `<option value="${e(a.slug)}" ${a.slug === chosen ? "selected" : ""}>${e(a.name)}</option>`).join("")}</select></label><label>Запрос<textarea name="message" required maxlength="8000"></textarea></label><label>Язык<select name="language"><option value="ru">Русский</option><option value="kk">Қазақша</option><option value="en">English</option><option value="auto">Автоматически</option></select></label><label class="file-picker" data-analysis-file hidden>Таблица в UTF-8 (необязательно)<input name="dataset" type="file" accept=".csv,.tsv"><span class="muted">До 128 КиБ и 5 000 строк данных.</span></label><fieldset data-engine-files><legend>Документы для запроса</legend>${
+function renderAgentRun(agent) {
+  const documents = isAnalyticsAgent(agent.slug)
+    ? '<label class="file-picker" data-analysis-file>Таблица в UTF-8 (необязательно)<input name="dataset" type="file" accept=".csv,.tsv"><span class="muted">До 128 КиБ и 5 000 строк данных.</span></label>'
+    : `<fieldset data-engine-files><legend>Документы для запроса</legend>${
       files
-        .filter((f) => !f.deletion_requested_at)
-        .map(
-          (f) =>
-            `<label data-purpose="${e(f.purpose)}"><input name="file_ids" type="checkbox" value="${e(f.id)}">${e(f.original_name)}</label>`,
-        )
+        .filter((f) => !f.deletion_requested_at && agent.accepted_file_purposes.includes(f.purpose))
+        .map((f) => `<label><input name="file_ids" type="checkbox" value="${e(f.id)}">${e(f.original_name)}</label>`)
         .join("") || '<p class="muted">Документы ещё не загружены.</p>'
-    }</fieldset><button class="btn btn--primary">Выполнить запрос</button></form>`,
-  )}
-  ${panel("Результат", '<p id="result-meta" class="muted">Текст результата не сохраняется в истории. Скопируйте его после выполнения.</p><pre id="result" class="work-output"></pre><div id="sources"></div>')}
-  </div></details>`);
-  const form = grid.querySelector("#run");
-  form.elements.slug.addEventListener("change", () => syncRunFiles(form));
-  syncRunFiles(form);
-}
-function syncRunFiles(form) {
-  const agent = agents.find((a) => a.slug === form.elements.slug.value);
-  const local = isAnalyticsAgent(agent?.slug);
-  form.querySelector("[data-analysis-file]").hidden = !local;
-  form.querySelector("[data-engine-files]").hidden = local;
-  if (!local) form.elements.dataset.value = "";
-  form.querySelectorAll("[data-purpose]").forEach((label) => {
-    const allowed = agent?.accepted_file_purposes.includes(
-      label.dataset.purpose,
-    );
-    label.hidden = !allowed;
-    if (!allowed) label.querySelector("input").checked = false;
-  });
+    }</fieldset>`;
+  root.innerHTML = `
+    <a class="link integration-back" href="${e(agentLink(agent.slug, "integration"))}" data-workspace-route>← К настройкам агента</a>
+    <div id="agent-run" class="work-grid">
+      ${panel("Запуск агента", `<form id="run" class="work-form">
+        <input name="slug" type="hidden" value="${e(agent.slug)}">
+        <label>Запрос<textarea name="message" required maxlength="8000"></textarea></label>
+        <label>Язык<select name="language"><option value="ru">Русский</option><option value="kk">Қазақша</option><option value="en">English</option><option value="auto">Автоматически</option></select></label>
+        ${documents}
+        <button class="btn btn--primary">Выполнить запрос</button>
+      </form>`)}
+      ${panel("Результат", '<p id="result-meta" class="muted">Текст результата не сохраняется в истории. Скопируйте его после выполнения.</p><pre id="result" class="work-output"></pre><div id="sources"></div>')}
+    </div>`;
 }
 async function showRuns() {
   const list = root.querySelector("#run-history[open] #runs");
@@ -355,7 +349,7 @@ async function render() {
 function navigateBusinessView() {
   tell();
   renderBusinessRoute();
-  if (!["#integration-history", "#agent-run"].includes(location.hash)) window.scrollTo(0, 0);
+  if (location.hash !== "#integration-history") window.scrollTo(0, 0);
 }
 root.addEventListener("click", (event) => {
   const link = event.target.closest("a[data-workspace-route]");
@@ -495,6 +489,7 @@ root.addEventListener("submit", async (event) => {
           },
         },
       );
+      if (!form.isConnected) return;
       root.querySelector("#result").textContent = result.execution.response;
       root.querySelector("#result-meta").textContent =
         `${status(result.execution.status)} · ${isAnalyticsAgent(value.slug)
@@ -506,7 +501,6 @@ root.addEventListener("submit", async (event) => {
             `<div class="work-item"><strong>${e(s.filename)}</strong><p>${e(s.excerpt)}</p></div>`,
         )
         .join("");
-      await showRuns();
     } else if (form.id === "submission") {
       if (!value.repository_url) delete value.repository_url;
       await request("/agent-submissions", { method: "POST", body: value });
@@ -530,6 +524,7 @@ root.addEventListener("submit", async (event) => {
       await render();
     }
   } catch (error) {
+    if (form.id === "run" && !form.isConnected) return;
     if (form.id === "auth" && error.code === "email_not_confirmed") {
       openConfirmation(value.email);
       return;
@@ -548,7 +543,6 @@ root.addEventListener("submit", async (event) => {
           : ""),
       true,
     );
-    if (form.id === "run") await showRuns();
   } finally {
     button.disabled = false;
     button.textContent = label;

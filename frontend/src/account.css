@@ -201,7 +201,7 @@
 .integration-document { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .integration-document label { display: flex; align-items: baseline; gap: 8px; }
 .integration-submit { width: 100%; }
-#application-integrations, #integration-history { scroll-margin-top: 86px; }
+#application-integrations, #integration-history, #agent-integration-history { scroll-margin-top: 86px; }
 .workspace-details > summary { cursor: pointer; font-weight: 600; }
 .workspace-details[open] > summary { margin-bottom: 20px; }
 .billing-actions, .billing-status:not(:empty) { margin-top: 12px; }
@@ -220,8 +220,6 @@
 .connection-status[data-state="approved"] { color: #176544; background: #e5f7ed; }
 .connection-status[data-state="pending"] { color: #805300; background: #fff3d6; }
 .connection-status[data-state="rejected"] { color: #9a283a; background: #fff0f3; }
-.integration-history-list { margin-top: 24px; }
-.integration-history-list > h3 { margin: 0 0 8px; }
 .integration-record { display: grid; gap: 14px; padding-block: 20px; }
 .integration-record:first-child { margin-top: 16px; }
 .integration-record-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }

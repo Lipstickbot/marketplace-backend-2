@@ -3,7 +3,11 @@ import { isAnalyticsAgent } from "./analytics-agent.js";
 
 const e = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
 export const integrationBase = (slug) => new URL(`${BASE}/agents/${encodeURIComponent(slug)}/v1`, location.origin).href;
-export const agentLink = (slug) => new URL("/account/?agent=" + encodeURIComponent(slug), location.origin).href;
+export function agentLink(slug, view) {
+  const url = new URL("/account/?agent=" + encodeURIComponent(slug), location.origin);
+  if (view) url.searchParams.set("view", view);
+  return url.href;
+}
 export function integrationExample(slug, base = integrationBase(slug)) {
   return `curl "${base}/chat/completions" \\\n  -H "Authorization: Bearer YOUR_KEME_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify({ model: "keme/" + slug, messages: [{role:"user",content:"Помоги выполнить мою задачу"}], stream:false })}'`;
 }
@@ -38,11 +42,9 @@ function integrationRecord(row, agentName) {
 function connectionRecord(connection, agent, statusLabel) {
   const agentName = agent?.name || "Агент недоступен";
   const canOpen = agent?.status === "published" || agent?.status === "coming_soon";
-  const link = canOpen ? new URL(agentLink(agent.slug)) : null;
-  if (link && connection.status === "approved" && agent.status === "published") {
-    link.searchParams.set("view", "integration");
-  }
-  const route = link?.searchParams.get("view") === "integration" ? " data-workspace-route" : "";
+  const opensWorkspace = canOpen && connection.status === "approved" && agent.status === "published";
+  const link = canOpen ? agentLink(agent.slug, opensWorkspace ? "integration" : undefined) : null;
+  const route = opensWorkspace ? " data-workspace-route" : "";
   return `<li class="connection-record">
     <div><strong>${e(agentName)}</strong>${connection.review_note ? `<p class="muted">${e(connection.review_note)}</p>` : ""}</div>
     <span class="pill connection-status" data-state="${e(connection.status)}">${e(statusLabel(connection.status))}</span>
@@ -50,7 +52,7 @@ function connectionRecord(connection, agent, statusLabel) {
   </li>`;
 }
 
-export async function setupIntegrationHistory(grid, agents, connections, tell, statusLabel) {
+export function renderConnectionHistory(grid, agents, connections, statusLabel) {
   const history = document.createElement("section");
   history.className = "work-panel wide";
   history.id = "integration-history";
@@ -58,12 +60,11 @@ export async function setupIntegrationHistory(grid, agents, connections, tell, s
     connection, agents.find((agent) => agent.id === connection.agent_id), statusLabel,
   ));
   history.innerHTML = `<h2 tabindex="-1">История подключений</h2>
-    ${requests.length ? `<ul class="connection-history">${requests.join("")}</ul>` : '<p class="muted">Заявок на подключение пока нет.</p>'}
-    <div class="integration-history-list">
-      <h3>API-подключения</h3>
-      <div id="integration-list" aria-live="polite" aria-busy="true"></div>
-    </div>`;
+    ${requests.length ? `<ul class="connection-history">${requests.join("")}</ul>` : '<p class="muted">Заявок на подключение пока нет.</p>'}`;
   grid.append(history);
+}
+
+function setupAgentIntegrationHistory(history, agent, tell, box) {
   const list = history.querySelector("#integration-list");
   const emptyHistory = '<p class="muted">API-подключений пока нет.</p>';
   let historyRequest = 0;
@@ -71,12 +72,10 @@ export async function setupIntegrationHistory(grid, agents, connections, tell, s
     const sequence = ++historyRequest;
     list.setAttribute("aria-busy", "true");
     try {
-      const rows = await request("/integrations");
+      const rows = await request("/integrations?agent_id=" + encodeURIComponent(agent.id));
       if (sequence !== historyRequest) return;
-      list.innerHTML = rows.filter((row) => !row.revoked_at).map((row) => {
-        const agentName = agents.find((agent) => agent.id === row.agent_id)?.name || row.agent_slug;
-        return integrationRecord(row, agentName);
-      }).join("") || emptyHistory;
+      list.innerHTML = rows.filter((row) => row.agent_id === agent.id && !row.revoked_at)
+        .map((row) => integrationRecord(row, agent.name)).join("") || emptyHistory;
     } catch {
       if (sequence !== historyRequest) return;
       list.innerHTML = '<p class="muted">Не удалось загрузить историю.</p><button type="button" class="btn btn--secondary" data-reload-integration-history>Повторить</button>';
@@ -92,17 +91,26 @@ export async function setupIntegrationHistory(grid, agents, connections, tell, s
       await showList();
       return;
     }
-    if (button.dataset.revokeIntegration) {
+    const id = button.dataset.revokeIntegration;
+    if (id) {
       button.disabled = true;
       try {
-        await request("/integrations/" + button.dataset.revokeIntegration, {method:"DELETE"});
+        await request("/integrations/" + encodeURIComponent(id), {method:"DELETE"});
+        if (!history.isConnected) return;
         button.closest(".integration-record").remove();
         if (!list.firstElementChild) list.innerHTML = emptyHistory;
+        if (box.dataset.integrationId === id) {
+          box.replaceChildren();
+          box.hidden = true;
+          delete box.dataset.integrationId;
+        }
         tell("Ключ отозван.");
+        void showList();
       } catch(error) { tell(error.message,true); button.disabled = false; }
     }
   });
-  await showList();
+  void showList();
+  return showList;
 }
 
 function enableCopy(container, tell) {
@@ -133,7 +141,10 @@ const historyUrl = "/account/#integration-history";
 export function renderIntegrationScreen(root, agent, files, tell, updateFiles) {
   root.innerHTML = `
     <a class="link integration-back" href="${historyUrl}" data-workspace-route>← К истории подключений</a>
-    <section class="work-panel integration-screen" id="application-integrations"></section>`;
+    <div class="work-grid">
+      <section class="work-panel wide integration-screen" id="application-integrations"></section>
+      ${agent ? '<section class="work-panel wide" id="agent-integration-history"><h2>API-подключения</h2><div id="integration-list" aria-live="polite" aria-busy="true"></div></section>' : ""}
+    </div>`;
   const host = root.querySelector("#application-integrations");
   if (!agent) {
     host.innerHTML = '<p>Настройка доступна после одобрения подключения этого агента.</p>';
@@ -142,7 +153,10 @@ export function renderIntegrationScreen(root, agent, files, tell, updateFiles) {
   document.title = `Настройка ${agent.name} — Keme AI`;
   const acceptedPurposes = agent.accepted_file_purposes;
   host.innerHTML = `
-    ${isAnalyticsAgent(agent.slug) ? `<p><a class="link" href="/account/?agent=${encodeURIComponent(agent.slug)}#agent-run" data-workspace-route>Запустить анализ CSV или TSV →</a></p>` : ""}
+    <div class="work-row">
+      <a class="link" href="#agent-integration-history">API-подключения</a>
+      <a class="link" href="${e(agentLink(agent.slug, "run"))}" data-workspace-route>${isAnalyticsAgent(agent.slug) ? "Запустить анализ CSV или TSV" : "Запустить агента"} →</a>
+    </div>
     <p class="muted">${acceptedPurposes.length
       ? "Задайте инструкции для агента и при необходимости добавьте документы. Агент будет использовать их при каждом API-запросе."
       : "Задайте инструкции и язык ответов для своего приложения."}</p>
@@ -182,6 +196,7 @@ export function renderIntegrationScreen(root, agent, files, tell, updateFiles) {
   const upload = host.querySelector("#integration-upload");
   const list = host.querySelector("#integration-documents-list");
   const box = host.querySelector("#integration-new");
+  const refreshHistory = setupAgentIntegrationHistory(root.querySelector("#agent-integration-history"), agent, tell, box);
   let working = false;
 
   function renderDocuments(selected = new FormData(form).getAll("file_ids")) {
@@ -235,17 +250,19 @@ export function renderIntegrationScreen(root, agent, files, tell, updateFiles) {
         expires_in_days: Number(data.get("expires_in_days")),
         file_ids: data.getAll("file_ids"),
       } });
-      const { agent_slug: slug, expires_at: expiresAt } = result.integration;
+      const { id, agent_slug: slug, expires_at: expiresAt } = result.integration;
       box.innerHTML = `<h2>Подключение создано</h2>
         <p class="muted">Скопируйте ключ сейчас. Он действует до ${e(new Date(expiresAt).toLocaleDateString())}.</p>
         ${copyField("integration-key", "API key", "", true)}
         ${copyField("integration-base", "Base URL", integrationBase(slug))}
         ${copyField("integration-model", "Model", `keme/${slug}`)}
         <details><summary>Пример запроса cURL</summary><pre class="work-code"></pre></details>
-        <a class="link" href="${historyUrl}" data-workspace-route>Открыть историю подключений</a>`;
+        <a class="link" href="#agent-integration-history">Открыть API-подключения этого агента</a>`;
       box.querySelector("#integration-key").value = result.api_key;
       box.querySelector("pre").textContent = integrationExample(slug);
+      box.dataset.integrationId = id;
       box.hidden = false;
+      void refreshHistory();
       tell("API-подключение создано. Скопируйте ключ в настройки своего приложения.");
       box.scrollIntoView({ behavior: "smooth", block: "center" });
     });

@@ -84,6 +84,17 @@ def test_keys_hash_only_scoped_and_not_exposed_again(environment):
     assert remote.keys[0]['user_id']==A and remote.keys[0]['company_id']==A
 
 
+def test_integration_history_can_be_scoped_to_one_agent_without_other_owners_keys(environment):
+    client, remote, _ = environment
+    integration = create(client)["integration"]
+    own = remote.keys[0]
+    remote.keys.append({**own, "id": str(uuid4()), "agent_id": str(uuid4()), "agent_slug": "support"})
+    remote.keys.append({**own, "id": str(uuid4()), "user_id": D, "company_id": D})
+    reply = client.get("/api/integrations", headers=auth(), params={"agent_id": integration["agent_id"]})
+    assert reply.status_code == 200
+    assert reply.json() == [integration]
+
+
 def test_openai_text_bridge_uses_task_engine_and_audit(environment):
     client,remote,engine=environment
     key=create(client)['api_key']; response=ask(client,key)
