@@ -143,9 +143,14 @@ class Review(InputModel):
 
 class SubmissionReview(Review):
     publication_slug: Slug | None = None
+    engine_slug: Slug | None = None
 
     @model_validator(mode="after")
     def publication_fields(self):
-        if (self.decision == "approved") != (self.publication_slug is not None):
-            raise ValueError("publication_slug is required only for approval")
+        if self.decision == "approved" and self.publication_slug is None:
+            self.publication_slug = self.engine_slug
+        if (self.decision == "approved") != (self.publication_slug is not None) or (
+            self.decision == "rejected" and self.engine_slug is not None
+        ):
+            raise ValueError("Publication and engine slugs are only for approval")
         return self

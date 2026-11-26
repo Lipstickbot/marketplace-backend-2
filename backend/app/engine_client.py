@@ -1,7 +1,7 @@
 import asyncio
 import re
 import time
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import httpx
 import jwt
@@ -9,6 +9,9 @@ import jwt
 from .config import Settings
 from .errors import APIError
 from .models import Principal
+
+
+CATALOG_ID = str(uuid5(NAMESPACE_URL, "https://keme-ai.onrender.com/moderation"))
 
 
 class EngineError(APIError):
@@ -24,19 +27,29 @@ class EngineClient:
         self.client = client
 
     def token(self, user: Principal) -> str:
-        if not self.settings.engine_jwt_secret:
-            raise APIError(503, "engine_not_configured", "Не настроен секрет AI Engine.")
         if user.role != "business" or user.company_id is None:
             raise APIError(403, "role_forbidden", "Доступно только бизнесу.")
+        return self._sign(str(user.user_id), str(user.company_id), "admin", user.company_name)
+
+    def _sign(self, user_id: str, company_id: str, role: str, company_name: str) -> str:
+        if not self.settings.engine_jwt_secret:
+            raise APIError(503, "engine_not_configured", "Не настроен секрет AI Engine.")
         now = int(time.time())
-        return jwt.encode({"sub": str(user.user_id), "company_id": str(user.company_id), "role": "admin",
-                           "company_name": user.company_name, "aud": self.settings.engine_jwt_audience,
+        return jwt.encode({"sub": user_id, "company_id": company_id, "role": role,
+                           "company_name": company_name, "aud": self.settings.engine_jwt_audience,
                            "iss": self.settings.engine_jwt_issuer, "iat": now,
                            "exp": now + self.settings.engine_jwt_ttl_seconds},
                           self.settings.engine_jwt_secret.get_secret_value(), algorithm="HS256")
 
     async def request(self, method, path, user: Principal | None = None, **kwargs):
-        headers = {"Authorization": f"Bearer {self.token(user)}"} if user else {}
+        return await self._request(method, path, self.token(user) if user else None, **kwargs)
+
+    async def agent_metadata(self, slug: str):
+        token = self._sign(CATALOG_ID, CATALOG_ID, "member", "Keme AI catalog verification")
+        return await self._request("GET", f"/agents/{slug}", token)
+
+    async def _request(self, method, path, token, **kwargs):
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
         try:
             async with asyncio.timeout(self.settings.engine_timeout_seconds):
                 response = await self.client.request(method, self.settings.engine_url + path, headers=headers, **kwargs)

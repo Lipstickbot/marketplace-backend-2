@@ -247,7 +247,10 @@ async function adminView() {
     all("/admin/agent-submissions?status=pending"),
   ]);
   const form = (type, row) =>
-    `<form class="work-form work-item" data-review="${type}" data-id="${e(row.id)}"><p>${e(type === "connect-requests" ? row.company_id : row.name)}</p>${type === "connect-requests" ? `<p>${e(row.message)}</p><p class="muted">Агент: ${e(row.agent_id)}</p>` : `<p>${e(row.description)}</p><p>${e(row.repository_url || "")}</p><label>Slug карточки при одобрении<input name="publication_slug" pattern="[a-z][a-z0-9-]{0,79}"></label>`}<label>Решение<select name="decision"><option value="approved">Одобрить</option><option value="rejected">Отклонить</option></select></label><label>Комментарий<textarea name="review_note" maxlength="4000"></textarea></label><button class="btn btn--primary">Сохранить решение</button></form>`;
+    `<form class="work-form work-item" data-review="${type}" data-id="${e(row.id)}"><p>${e(type === "connect-requests" ? row.company_id : row.name)}</p>${type === "connect-requests" ? `<p>${e(row.message)}</p><p class="muted">Агент: ${e(row.agent_id)}</p>` : `<p>${e(row.description)}</p>${row.repository_url ? `<a class="link" href="${e(row.repository_url)}" target="_blank" rel="noopener noreferrer">Открыть репозиторий ↗</a>` : ""}
+      <label>Идентификатор в AI Engine (engine_slug)<input name="engine_slug" pattern="[a-z][a-z0-9-]{0,79}" placeholder="sales-assistant"></label>
+      <p class="muted">Для активации укажите идентификатор уже подключённого к AI Engine агента.</p>
+      <label>Адрес карточки в каталоге<input name="publication_slug" pattern="[a-z][a-z0-9-]{0,79}" placeholder="По умолчанию совпадает с engine_slug"></label>`}<label>Решение<select name="decision"><option value="approved">${type === "agent-submissions" ? "Одобрить и активировать" : "Одобрить"}</option>${type === "agent-submissions" ? '<option value="coming_soon">Одобрить со статусом «Скоро»</option>' : ""}<option value="rejected">Отклонить</option></select></label><label>Комментарий<textarea name="review_note" maxlength="4000"></textarea></label><button class="btn btn--primary">Сохранить решение</button></form>`;
   root.innerHTML = `<div class="work-grid">${panel("Подключения бизнеса", connects.map((r) => form("connect-requests", r)).join("") || "<p>Нет ожидающих заявок.</p>")}${panel("Заявки на публикацию", submissions.map((r) => form("agent-submissions", r)).join("") || "<p>Нет ожидающих заявок.</p>")}</div>`;
 }
 function draftView() {
@@ -436,22 +439,20 @@ root.addEventListener("submit", async (event) => {
       tell("Заявка отправлена.");
       await render();
     } else if (form.dataset.review) {
-      if (
-        form.dataset.review === "agent-submissions" &&
-        value.decision === "approved" &&
-        !value.publication_slug
-      )
-        throw new Error("Укажите slug для публикации.");
-      if (
-        value.decision === "rejected" ||
-        form.dataset.review === "connect-requests"
-      )
-        delete value.publication_slug;
-      await request(`/admin/${form.dataset.review}/${form.dataset.id}/review`, {
-        method: "POST",
-        body: value,
-      });
-      tell("Решение сохранено.");
+      const publication = form.dataset.review === "agent-submissions";
+      const activate = publication && value.decision === "approved";
+      const body = { decision: value.decision === "coming_soon" ? "approved" : value.decision, review_note: value.review_note };
+      if (activate) {
+        if (!value.engine_slug) throw new Error("Укажите идентификатор агента в AI Engine.");
+        body.engine_slug = value.engine_slug;
+        if (value.publication_slug) body.publication_slug = value.publication_slug;
+        button.textContent = "Проверяем AI Engine…";
+      } else if (publication && value.decision === "coming_soon") {
+        if (!value.publication_slug) throw new Error("Укажите адрес карточки в каталоге.");
+        body.publication_slug = value.publication_slug;
+      }
+      await request(`/admin/${form.dataset.review}/${form.dataset.id}/review`, { method: "POST", body });
+      tell(activate ? "Агент активирован и доступен в каталоге." : "Решение сохранено.");
       await render();
     }
   } catch (error) {

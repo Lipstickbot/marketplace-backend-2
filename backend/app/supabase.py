@@ -13,8 +13,11 @@ class SupabaseGateway:
 
     async def request(self, method: str, path: str, *, token: str | None = None,
                       body: dict | None = None, params: dict | None = None,
-                      operation: str = "profile", representation: bool = False):
-        headers = {"apikey": self.settings.supabase_publishable_key.get_secret_value()}
+                      operation: str = "profile", representation: bool = False, server_only: bool = False):
+        key = self.settings.supabase_secret_key if server_only else self.settings.supabase_publishable_key
+        if key is None:
+            raise APIError(503, "runtime_storage_not_configured", "Добавьте серверный ключ Supabase в окружение бэкенда.")
+        headers = {"apikey": key.get_secret_value()}
         if token:
             headers["Authorization"] = f"Bearer {token}"
         if method == "PATCH" or representation:

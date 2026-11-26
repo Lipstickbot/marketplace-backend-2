@@ -59,9 +59,10 @@ function profileUrl(row) {
   return "/catalog/?agent=" + encodeURIComponent(row.slug);
 }
 function badge(row) {
-  return row.status === "coming_soon"
-    ? text("Скоро", "Жақында", "Coming soon")
-    : text("Демо · mock", "Демо · mock", "Demo · mock");
+  if (row.status === "coming_soon") return text("Скоро", "Жақында", "Coming soon");
+  return uiId(row.engine_slug)
+    ? text("Демо · mock", "Демо · mock", "Demo · mock")
+    : text("Доступен", "Қолжетімді", "Available");
 }
 function card(row) {
   const a = display(row);
@@ -108,7 +109,7 @@ function render() {
       return;
     }
     const a = display(row);
-    root.innerHTML = `<a class="link directory-back" href="/catalog/">${e(catalogCopy(lang).back)}</a><div class="profile-grid"><section class="profile-intro"><div class="profile-identity">${agentMark(a.id)}<span class="pill">${badge(row)}</span></div><h1 class="display">${e(a.name)}</h1><p class="lead">${e(a.task)}</p><ul class="acard__does">${a.features.map((f) => `<li>${e(f)}</li>`).join("")}</ul>${row.status === "published" ? `<a class="btn btn--primary" href="/account/?agent=${encodeURIComponent(row.slug)}&intent=connect">${text("Подключить под свою задачу", "Өз міндетіме қосу", "Connect for my task")}</a>` : `<p>${text("Подключение появится позже.", "Қосылу кейінірек қолжетімді болады.", "Connection will be available later.")}</p>`}</section><section class="profile-example"><h2 class="h2">${e(catalogCopy(lang).sample)}</h2><p>${e(a.input || a.task)}</p><p>${e(a.output || "")}</p><p class="note">${row.status === "published" ? text("Демонстрационный режим. Войдите в кабинет, чтобы подключить агента.", "Демо режимі. Агентті қосу үшін жеке кабинетке кіріңіз.", "Demo mode. Sign in to your workspace to connect this agent.") : badge(row)}</p></section></div>`;
+    root.innerHTML = `<a class="link directory-back" href="/catalog/">${e(catalogCopy(lang).back)}</a><div class="profile-grid"><section class="profile-intro"><div class="profile-identity">${agentMark(a.id)}<span class="pill">${badge(row)}</span></div><h1 class="display">${e(a.name)}</h1><p class="lead">${e(a.task)}</p><ul class="acard__does">${a.features.map((f) => `<li>${e(f)}</li>`).join("")}</ul>${row.status === "published" ? `<a class="btn btn--primary" href="/account/?agent=${encodeURIComponent(row.slug)}&intent=connect">${text("Подключить под свою задачу", "Өз міндетіме қосу", "Connect for my task")}</a>` : `<p>${text("Подключение появится позже.", "Қосылу кейінірек қолжетімді болады.", "Connection will be available later.")}</p>`}</section><section class="profile-example"><h2 class="h2">${e(catalogCopy(lang).sample)}</h2><p>${e(a.input || a.task)}</p><p>${e(a.output || "")}</p><p class="note">${row.status === "published" && uiId(row.engine_slug) ? text("Демонстрационный режим. Войдите в кабинет, чтобы подключить агента.", "Демо режимі. Агентті қосу үшін жеке кабинетке кіріңіз.", "Demo mode. Sign in to your workspace to connect this agent.") : badge(row)}</p></section></div>`;
     return;
   }
   const c = catalogCopy(lang);

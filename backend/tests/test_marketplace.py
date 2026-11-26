@@ -202,6 +202,41 @@ def test_admin_reviews_pass_only_decision_and_current_jwt(environment):
     assert client.get('/admin/agent-submissions',headers=auth('admin')).status_code==200
 
 
+@pytest.mark.parametrize("engine_status", [200, 404, 503])
+def test_activation_checks_engine_before_server_only_review(engine_status):
+    remote = MarketplaceFake()
+    writes = []
+    def platform(request):
+        if request.url.path == "/rest/v1/rpc/activate_agent_submission":
+            assert request.headers["apikey"] == "sb_secret_test"
+            assert "authorization" not in request.headers
+            writes.append(json.loads(request.content))
+            return httpx.Response(200, json=submission(status="approved", reviewed_by=M,
+                reviewed_at=NOW, published_agent_id=AGENT))
+        return remote(request)
+    def engine(request):
+        assert request.method == "GET" and request.url.path == "/agents/sales-assistant"
+        assert request.headers["authorization"].startswith("Bearer ")
+        return httpx.Response(engine_status, json={
+            "slug": "sales-assistant", "version": "1.0", "supported_languages": ["ru"],
+            "capabilities": ["sales"], "accepted_file_purposes": ["brief"],
+            "input_schema": {}, "output_schema": {},
+        } if engine_status == 200 else {"error": {"code": "agent_not_found" if engine_status == 404 else "unavailable"}})
+    settings = Settings(supabase_url="https://project.supabase.co", supabase_publishable_key="sb_publishable_test",
+        supabase_secret_key="sb_secret_test", engine_jwt_secret="test-signing-secret-at-least-32-chars")
+    with TestClient(create_app(settings, transport=httpx.MockTransport(platform),
+                              engine_transport=httpx.MockTransport(engine))) as client:
+        response = client.post(f"/admin/agent-submissions/{SUBMISSION}/review", headers=auth("admin"),
+            json={"decision": "approved", "engine_slug": "sales-assistant"})
+    assert response.status_code == {200: 200, 404: 422, 503: 503}[engine_status]
+    if engine_status == 200:
+        assert writes[0]["p_actor"] == M
+        assert writes[0]["p_card"]["slug"] == writes[0]["p_card"]["engine_slug"] == "sales-assistant"
+        assert writes[0]["p_card"]["accepted_file_purposes"] == ["brief"]
+    else:
+        assert not writes
+
+
 @pytest.mark.parametrize('body',[{'decision':'pending'},{'decision':'approved'},{'decision':'rejected','publication_slug':'bad'},
                                  {'decision':'approved','publication_slug':'fine','reviewed_by':M}])
 def test_submission_review_payload_is_strict(environment,body):

@@ -3,10 +3,11 @@ import re
 from typing import Annotated, Literal, TypeVar
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Path, Query, Request
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from .auth import current_token, gateway, require_roles
+from .engine_client import EngineError
 from .errors import APIError
 from .marketplace_models import (Agent, AgentCreate, AgentPatch, AgentStatus, ConnectCreate, ConnectRequest,
                                  Page, Review, ReviewStatus, Submission, SubmissionCreate, SubmissionReview)
@@ -173,7 +174,39 @@ async def admin_submissions(user: Admin, token: Token, client: Client, limit: Li
 
 
 @router.post("/admin/agent-submissions/{submission_id}/review", response_model=Submission, tags=["Admin"])
-async def review_submission(submission_id: UUID, body: SubmissionReview, user: Admin, token: Token, client: Client):
+async def review_submission(submission_id: UUID, body: SubmissionReview, user: Admin, token: Token, client: Client,
+                            request: Request):
+    if body.engine_slug:
+        submission = await one(client, "agent_submissions", Submission, token=token,
+                               filters={"id": f"eq.{submission_id}"})
+        if submission.status != "pending":
+            raise APIError(409, "already_reviewed", "Заявка уже рассмотрена.")
+        engine = request.app.state.engine_client
+        try:
+            metadata = await engine.agent_metadata(body.engine_slug)
+        except EngineError as exc:
+            if exc.status == 404:
+                raise APIError(422, "engine_agent_not_found", "Агент с таким slug не найден в AI Engine.") from None
+            raise
+        try:
+            if not isinstance(metadata, dict) or metadata.get("slug") != body.engine_slug:
+                raise ValueError
+            card = AgentCreate(slug=body.publication_slug, name=submission.name, description=submission.description,
+                category=submission.category, engine_slug=body.engine_slug, status="published",
+                supported_languages=metadata["supported_languages"], version=metadata["version"],
+                capabilities=metadata["capabilities"], accepted_file_purposes=metadata["accepted_file_purposes"],
+                input_schema=metadata["input_schema"], output_schema=metadata["output_schema"])
+        except (KeyError, ValueError):
+            raise APIError(502, "engine_invalid_agent_metadata", "AI Engine вернул несовместимые настройки агента.") from None
+        try:
+            data = await client.request("POST", "/rest/v1/rpc/activate_agent_submission", operation="marketplace",
+                server_only=True, body={"p_submission_id": str(submission_id), "p_actor": str(user.user_id),
+                "p_review_note": body.review_note, "p_card": card.model_dump(mode="json", exclude={"developer_id"})})
+        except APIError as exc:
+            if exc.code == "duplicate_record":
+                raise APIError(409, "agent_binding_conflict", "Адрес карточки или идентификатор AI Engine уже занят.") from None
+            raise
+        return validated(Submission, data)
     return await rpc(client, "review_agent_submission", Submission, token,
         {"p_submission_id": str(submission_id), "p_decision": body.decision,
          "p_review_note": body.review_note, "p_publication_slug": body.publication_slug})

@@ -390,3 +390,29 @@ test('submission approval publishes one coming-soon card atomically and preserve
   const rejected=await user(ids.admin, () => query("select public.review_agent_submission($1,'rejected','No executor',null) as result",[rejectedId]));
   assert.equal(rejected.rows[0].result.published_agent_id,null);
 });
+
+test('only the backend activates a verified agent and businesses connect instantly', async () => {
+  const { rows: [{ id }] } = await user(ids.dev2, () => query(
+    "insert into public.agent_submissions(developer_id,name,description,category) values ($1,'Sales','Sales agent','sales') returning id",
+    [ids.dev2],
+  ));
+  const card = { slug: 'sales-assistant', engine_slug: 'sales-assistant', version: '1',
+    supported_languages: ['ru'], capabilities: [], accepted_file_purposes: [], input_schema: {}, output_schema: {} };
+  const activate = (actor, data = card) => query('select public.activate_agent_submission($1,$2,null,$3) as result', [id, actor, data]);
+  await denied(() => user(ids.admin, () => activate(ids.admin)));
+  await denied(() => service(() => activate(ids.a)));
+  await denied(() => service(() => activate(ids.admin, { ...card, engine_slug: 'marketing' })), '23505');
+  const { rows: [{ result }] } = await service(() => activate(ids.admin));
+  assert.equal(result.status, 'approved');
+  assert.equal(result.reviewed_by, ids.admin);
+  const { rows: [published] } = await asRole('anon', null, () => query(
+    'select status,engine_slug from public.agents where id=$1', [result.published_agent_id],
+  ));
+  assert.deepEqual(published, { status: 'published', engine_slug: 'sales-assistant' });
+  const { rows: [connection] } = await user(ids.a, () => query(
+    'insert into public.connect_requests(company_id,requested_by,agent_id) values ($1,$1,$2) returning status,auto_approved',
+    [ids.a, result.published_agent_id],
+  ));
+  assert.deepEqual(connection, { status: 'approved', auto_approved: true });
+  await denied(() => service(() => activate(ids.admin)), 'P0001');
+});
