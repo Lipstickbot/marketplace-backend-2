@@ -10,11 +10,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, Path, Request, Response
 from pydantic import BaseModel, Field, field_validator
 
+from .business_analytics import LEGACY_SLUG, SLUG as ANALYTICS_SLUG
 from .engine_models import RunInput, StoredFile
 from .errors import APIError
 from .execution import Engine, Store, run_agent
 from .file_service import owner_filters
-from .marketplace import Business, Client, Token, one, validated
+from .marketplace import Business, Client, Token, catalog_agent, one, validated
 from .marketplace_models import Agent
 from .models import InputModel, Principal, Profile
 
@@ -74,7 +75,7 @@ async def integrations(user: Business, store: Store):
 @router.post("/integrations", status_code=201)
 async def create_integration(body: IntegrationCreate, user: Business, token: Token, client: Client, store: Store, request: Request):
     request.app.state.auth_limiter.check("integration-create:" + str(user.user_id))
-    agent = await one(client, "agents", Agent, token=token, filters={"slug": f"eq.{body.agent_slug}", "status": "eq.published"})
+    agent = await catalog_agent(client, body.agent_slug, token=token)
     if not agent.engine_slug:
         raise APIError(422, "agent_not_executable", "У агента нет исполнителя.")
     await approval(client, token, user, agent)
@@ -84,7 +85,7 @@ async def create_integration(body: IntegrationCreate, user: Business, token: Tok
             raise APIError(422, "file_purpose_not_accepted", "Выберите доступные документы для этого агента.")
     key = "keme_" + secrets.token_urlsafe(32)
     payload = {**body.model_dump(mode="json", exclude={"expires_in_days"}), "user_id": str(user.user_id),
-        "company_id": str(user.company_id), "agent_id": str(agent.id), "key_prefix": key[:13],
+        "company_id": str(user.company_id), "agent_id": str(agent.id), "agent_slug": agent.slug, "key_prefix": key[:13],
         "key_hash": hashlib.sha256(key.encode()).hexdigest(),
         "expires_at": (datetime.now(UTC) + timedelta(days=body.expires_in_days)).isoformat()}
     rows = await store.request("POST", TABLE, body=payload)
@@ -175,7 +176,11 @@ async def chat_completion(body: ChatInput, context: Context, engine: Engine, sto
     if body.model != "keme/" + config.agent_slug:
         raise APIError(403, "model_not_allowed", "Ключ разрешает только выбранного агента.")
     reader = ScopedReader(store, user)
-    agent = await one(reader, "agents", Agent, filters={"id": f"eq.{config.agent_id}", "slug": f"eq.{config.agent_slug}", "status": "eq.published"})
+    agent = await one(reader, "agents", Agent, filters={"id": f"eq.{config.agent_id}", "status": "eq.published"})
+    if agent.slug != config.agent_slug and not (
+        config.agent_slug == LEGACY_SLUG and agent.slug == agent.engine_slug == ANALYTICS_SLUG
+    ):
+        raise APIError(403, "agent_url_not_allowed", "Этот ключ выдан для другого агента.")
     if body.messages[-1].role != "user":
         raise APIError(422, "invalid_messages", "Последнее сообщение должно быть запросом пользователя.")
     instructions = [config.task] + [m.content for m in body.messages if m.role == "system"]
@@ -186,7 +191,7 @@ async def chat_completion(body: ChatInput, context: Context, engine: Engine, sto
     history = [m.model_dump() for m in body.messages[:-1] if m.role != "system"]
     if len(history) > 10:
         raise APIError(422, "history_too_long", "История — до 10 сообщений.")
-    result = await run_agent(config.agent_slug, RunInput(message=message, history=history,
+    result = await run_agent(agent.slug, RunInput(message=message, history=history,
         file_ids=config.file_ids, language=config.language), user, "", reader, engine, store, request)
     execution = result.execution
     return {"id": "chatcmpl-" + str(result.platform_run_id), "object": "chat.completion", "created": int(time.time()),

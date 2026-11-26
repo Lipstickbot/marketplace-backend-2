@@ -12,6 +12,7 @@ import { startGoogleLogin, finishGoogleLogin } from "./google-auth.js";
 import { goHomeAfterAuth } from "./auth-navigation.js";
 import { setupIntegrationHistory, renderIntegrationScreen } from "./integrations.js";
 import { formatPrice } from "./price.js";
+import { findAgent, isAnalyticsAgent } from "./analytics-agent.js";
 import "./glass-nav.js";
 const root = document.querySelector("#workspace"),
   notice = document.querySelector("#notice"),
@@ -166,8 +167,9 @@ function renderBusinessRoute() {
   const openingAgent = url.searchParams.get("view") === "integration" || url.hash === "#application-integrations";
   if (openingAgent) {
     workspaceTitle.textContent = "Подключить к своему приложению";
-    const agent = agents.find((a) => a.slug === url.searchParams.get("agent") && a.status === "published"
+    const accessible = agents.filter((a) => a.status === "published"
       && connections.some((c) => c.agent_id === a.id && c.status === "approved"));
+    const agent = findAgent(accessible, url.searchParams.get("agent"));
     const owner = businessDataOwner;
     renderIntegrationScreen(root, agent, files, tell, (updated) => {
       if (businessDataOwner === owner) files = updated;
@@ -181,6 +183,7 @@ function renderBusinessRoute() {
 }
 function renderBusiness(chosen = new URLSearchParams(location.search).get("agent")) {
   const published = agents.filter((a) => a.status === "published");
+  chosen = findAgent(published, chosen)?.slug;
   const approved = published.filter((a) => connections.some((c) => c.agent_id === a.id && c.status === "approved"));
   const options = published
     .map((a) => `<option value="${e(a.id)}" ${a.slug === chosen ? "selected" : ""}>${e(a.name)}</option>`)
@@ -214,7 +217,7 @@ function renderBusiness(chosen = new URLSearchParams(location.search).get("agent
 }
 
 function renderTrialRun(grid, approved, chosen) {
-  grid.insertAdjacentHTML("beforeend", `<details id="agent-run" class="work-panel wide workspace-details" ${chosen === "business-analytics" ? "open" : ""}><summary>Запуск агента в кабинете</summary><div class="work-grid">${panel(
+  grid.insertAdjacentHTML("beforeend", `<details id="agent-run" class="work-panel wide workspace-details" ${isAnalyticsAgent(chosen) ? "open" : ""}><summary>Запуск агента в кабинете</summary><div class="work-grid">${panel(
     "Запуск агента",
     `<form id="run" class="work-form"><label>Агент<select name="slug">${approved.map((a) => `<option value="${e(a.slug)}" ${a.slug === chosen ? "selected" : ""}>${e(a.name)}</option>`).join("")}</select></label><label>Запрос<textarea name="message" required maxlength="8000"></textarea></label><label>Язык<select name="language"><option value="ru">Русский</option><option value="kk">Қазақша</option><option value="en">English</option><option value="auto">Автоматически</option></select></label><label class="file-picker" data-analysis-file hidden>Таблица в UTF-8 (необязательно)<input name="dataset" type="file" accept=".csv,.tsv"><span class="muted">До 128 КиБ и 5 000 строк данных.</span></label><fieldset data-engine-files><legend>Документы для запроса</legend>${
       files
@@ -234,7 +237,7 @@ function renderTrialRun(grid, approved, chosen) {
 }
 function syncRunFiles(form) {
   const agent = agents.find((a) => a.slug === form.elements.slug.value);
-  const local = agent?.slug === "business-analytics";
+  const local = isAnalyticsAgent(agent?.slug);
   form.querySelector("[data-analysis-file]").hidden = !local;
   form.querySelector("[data-engine-files]").hidden = local;
   if (!local) form.elements.dataset.value = "";
@@ -468,7 +471,7 @@ root.addEventListener("submit", async (event) => {
       button.textContent = "Агент выполняет запрос…";
       const selectedFile = data.get("dataset");
       let dataset;
-      if (value.slug === "business-analytics" && selectedFile?.name) {
+      if (isAnalyticsAgent(value.slug) && selectedFile?.name) {
         if (!/\.(csv|tsv)$/i.test(selectedFile.name)) throw new Error("Выберите CSV или TSV.");
         if (selectedFile.size > 128 * 1024) throw new Error("Размер файла должен быть не больше 128 КиБ.");
         if (!selectedFile.size) throw new Error("Файл пуст. Добавьте строку с данными.");
@@ -494,7 +497,7 @@ root.addEventListener("submit", async (event) => {
       );
       root.querySelector("#result").textContent = result.execution.response;
       root.querySelector("#result-meta").textContent =
-        `${status(result.execution.status)} · ${value.slug === "business-analytics"
+        `${status(result.execution.status)} · ${isAnalyticsAgent(value.slug)
           ? "Локальный анализ"
           : `${result.execution.mode === "mock" ? "Демонстрационный ответ (mock)" : result.execution.mode} · ${result.execution.usage.total_tokens} токенов`}${result.audit_saved ? "" : " · Журнал ожидает сверки"}`;
       root.querySelector("#sources").innerHTML = result.execution.sources

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Path, Query, Request
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from .auth import current_token, gateway, require_roles
+from .business_analytics import LEGACY_SLUG, SLUG as ANALYTICS_SLUG
 from .engine_client import EngineError
 from .errors import APIError
 from .marketplace_models import (Agent, AgentCreate, AgentPatch, AgentStatus, ConnectCreate, ConnectRequest,
@@ -61,6 +62,15 @@ async def rpc(client: SupabaseGateway, name: str, model: type[M], token: str, bo
                                                  body=body, operation="marketplace"))
 
 
+async def catalog_agent(client, slug, *, token=None, status="eq.published"):
+    try:
+        return await one(client, "agents", Agent, token=token, filters={"slug": f"eq.{slug}", "status": status})
+    except APIError as error:
+        if error.status != 404 or slug != LEGACY_SLUG:
+            raise
+    return await one(client, "agents", Agent, token=token, filters={"slug": f"eq.{ANALYTICS_SLUG}", "status": status})
+
+
 @router.get("/agents", response_model=Page[Agent], tags=["Catalog"])
 async def agents(client: Client, limit: Limit = 20, offset: Offset = 0,
                  category: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
@@ -79,7 +89,7 @@ async def agents(client: Client, limit: Limit = 20, offset: Offset = 0,
 
 @router.get("/agents/{slug}", response_model=Agent, tags=["Catalog"])
 async def agent(slug: Annotated[str, Path(pattern=r"^[a-z][a-z0-9-]{0,79}$")], client: Client):
-    return await one(client, "agents", Agent, filters={"slug": f"eq.{slug}", "status": "in.(published,coming_soon)"})
+    return await catalog_agent(client, slug, status="in.(published,coming_soon)")
 
 
 @router.get("/developer/agents", response_model=Page[Agent], tags=["Developer"])

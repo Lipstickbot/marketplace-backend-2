@@ -43,7 +43,7 @@ Docker-образ успешно собран на Render, деплой полу
 
 ## Автодеплой бизнес-аналитика
 
-1. Убедитесь, что в каталоге есть одна карточка `business-analytics`. Публичный ID существующей карточки `d4050059-3984-4e4a-a811-deb07bed1f13`. Адрес карточки `/catalog/?agent=business-analytics`. Миграция `20261126190000_agent_purchases.sql` нужна перед отдельным включением продажи агентов.
+1. Проверьте карточку из заявки разработчика со slug `keme-business-analytics` и ID `40466f5f-1e54-4b52-bf63-5f280b79933a`. Публичный адрес карточки `/catalog/?agent=keme-business-analytics`. Карточка-заготовка `business-analytics` архивируется, её адрес ведёт к карточке из заявки. Миграция `20261126190000_agent_purchases.sql` нужна перед отдельным включением продажи агентов.
 2. Проверьте, что оба сервиса Render привязаны к ветке `main` репозитория платформы через GitHub. В Render оставьте **Auto-Deploy → Off** для обоих сервисов. Точный коммит развернёт GitHub Actions.
 3. В GitHub создайте окружение **production** для ветки `main`. В его secrets задайте `RENDER_API_KEY` с правами на деплой двух сервисов и `SUPABASE_SECRET_KEY`. В variables задайте `RENDER_BACKEND_SERVICE_ID`, `RENDER_FRONTEND_SERVICE_ID`, `RENDER_BACKEND_URL` (HTTPS без `/api`), `SUPABASE_URL` и `SUPABASE_PUBLISHABLE_KEY`. В переменных самого репозитория задайте `RENDER_ANALYTICS_DEPLOY=true`.
 4. После слияния в `main` GitHub Actions проверит фронтенд, базу, API и 37 тестов агента. Затем скрипт развернёт бэкенд и проверит его по `/api/health/business-analytics`. Проверка выполнит текстовый запрос и расчёт прибыли на небольшой таблице и сверит SHA. При успехе скрипт обновит существующую карточку и развернёт фронтенд. При ошибке проверки шаг активации завершится ошибкой до изменения карточки.

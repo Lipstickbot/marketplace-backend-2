@@ -1,6 +1,9 @@
 from uuid import uuid4
 
 from starlette.responses import JSONResponse
+from .business_analytics import ANALYTICS_SLUGS
+
+ANALYTICS_RUN_PATHS = {f"{prefix}/agents/{slug}/run" for prefix in ("", "/api") for slug in ANALYTICS_SLUGS}
 
 
 class BodySizeLimit:
@@ -12,7 +15,7 @@ class BodySizeLimit:
         if scope["type"] != "http" or scope["method"] not in {"POST", "PATCH", "PUT"}:
             return await self.app(scope, receive, send)
         maximum = 11 * 1024 * 1024 if scope["path"] in {"/files/upload", "/api/files/upload"} else 512 * 1024
-        if scope["path"] in {"/agents/business-analytics/run", "/api/agents/business-analytics/run"}:
+        if scope["path"] in ANALYTICS_RUN_PATHS:
             maximum = 896 * 1024  # bound JSON escaping overhead separately from the UTF-8 dataset limit
         messages, size = [], 0
         while True:

@@ -13,12 +13,14 @@ from .engine_models import Execution, RunInput, Usage
 from .errors import APIError
 
 
-SLUG = "business-analytics"
+LEGACY_SLUG = "business-analytics"
+SLUG = "keme-business-analytics"
+ANALYTICS_SLUGS = (SLUG, LEGACY_SLUG)
 VERSION = "1.0.0"
 logger = logging.getLogger(__name__)
 
 
-async def run_local(body: RunInput, run_id: UUID) -> Execution:
+async def run_local(body: RunInput, run_id: UUID, slug: str = SLUG) -> Execution:
     started = perf_counter()
     dataset = body.dataset
     language = choose_language(body.message, body.language)
@@ -41,7 +43,7 @@ async def run_local(body: RunInput, run_id: UUID) -> Execution:
     except Exception as error:
         logger.error("business_analytics_failed error_type=%s", type(error).__name__)
         raise APIError(500, "analytics_failed", "Не удалось составить отчёт. Попробуйте повторить запрос.") from None
-    return Execution(run_id=run_id, agent=SLUG, agent_version=VERSION, status="success", response=result.answer,
+    return Execution(run_id=run_id, agent=slug, agent_version=VERSION, status="success", response=result.answer,
         language=result.language, sources=[], usage=Usage(input_tokens=0, output_tokens=0, total_tokens=0,
         estimated_cost=0, currency="USD"), execution_time_ms=int((perf_counter() - started) * 1000),
         mode="none", model=None, data=result.data, warnings=[])
@@ -62,7 +64,7 @@ async def activate(store):
     rows = await store.request("GET", "/rest/v1/agents",
         params={"slug": f"eq.{SLUG}", "select": "id,engine_slug,status"})
     if not isinstance(rows, list) or len(rows) != 1:
-        raise RuntimeError("Expected one existing business-analytics catalog card")
+        raise RuntimeError("Expected the submitted keme-business-analytics catalog card")
     card = rows[0]
     agent_id = card["id"]
     if card["engine_slug"] is None and card["status"] == "coming_soon":

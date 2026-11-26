@@ -8,12 +8,12 @@ from fastapi import APIRouter, Depends, File, Form, Path, Request, Response, Upl
 from pydantic import ValidationError
 
 from .engine_client import EngineClient, EngineError
-from .business_analytics import SLUG as ANALYTICS_SLUG, run_local, smoke as smoke_analytics
+from .business_analytics import ANALYTICS_SLUGS, SLUG as ANALYTICS_SLUG, run_local, smoke as smoke_analytics
 from .engine_models import EngineRunMetadata, Execution, RunInput, RunRecord, RunResponse, StoredFile
 from .errors import APIError
 from .file_service import FileService
-from .marketplace import Business, Client, Limit, Offset, Token, one, page, validated
-from .marketplace_models import Agent, ConnectRequest, Page, Purpose
+from .marketplace import Business, Client, Limit, Offset, Token, catalog_agent, one, page, validated
+from .marketplace_models import ConnectRequest, Page, Purpose
 from .runtime_store import RuntimeStore
 
 logger = logging.getLogger(__name__)
@@ -61,10 +61,10 @@ async def analytics_health():
 @router.post("/agents/{slug}/run", response_model=RunResponse, tags=["Execution"])
 async def run_agent(slug: Annotated[str, Path(pattern=r"^[a-z][a-z0-9-]{0,79}$")], body: RunInput,
                     user: Business, token: Token, client: Client, engine: Engine, store: Store, request: Request):
-    agent = await one(client, "agents", Agent, token=token, filters={"slug": f"eq.{slug}", "status": "eq.published"})
+    agent = await catalog_agent(client, slug, token=token)
     if not agent.engine_slug:
         raise APIError(422, "agent_not_executable", "У агента нет подключённого исполнителя.")
-    local = agent.slug == ANALYTICS_SLUG and agent.engine_slug == ANALYTICS_SLUG
+    local = agent.slug in ANALYTICS_SLUGS and agent.engine_slug == agent.slug
     rows = await client.request("GET", "/rest/v1/connect_requests", token=token, operation="marketplace",
         params={"company_id": f"eq.{user.company_id}", "agent_id": f"eq.{agent.id}", "status": "eq.approved", "limit": "1"})
     if not isinstance(rows, list) or len(rows) != 1:
@@ -96,7 +96,7 @@ async def run_agent(slug: Annotated[str, Path(pattern=r"^[a-z][a-z0-9-]{0,79}$")
     payload = {**body.model_dump(mode="json", exclude={"dataset"}), "file_ids": engine_ids}
     try:
         if local:
-            result = await run_local(body, run.id)
+            result = await run_local(body, run.id, agent.slug)
         else:
             raw = await engine.request("POST", f"/agents/{agent.engine_slug}/run", user, json=payload)
             try:

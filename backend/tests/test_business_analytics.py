@@ -7,9 +7,12 @@ import pytest
 from backend.app import business_analytics
 from backend.tests.test_auth import auth
 from backend.tests.test_execution import environment  # shared platform, Supabase and Engine fixtures
+from backend.tests.test_integrations import environment as integration_environment
+from backend.tests.test_marketplace import card
 from scripts.deploy_business_analytics import activate_healthy
 
 SLUG = business_analytics.SLUG
+LEGACY_SLUG = business_analytics.LEGACY_SLUG
 URL = f"/api/agents/{SLUG}/run"
 
 
@@ -47,6 +50,33 @@ def test_analytics_text_only_and_requires_access(analytics):
     reply = client.post(URL, headers=auth(), json=payload)
     assert reply.status_code == 200 and reply.json()["execution"]["response"]
     assert remote.records["agent_runs"][0]["file_count"] == 0
+    assert not engine.requests
+
+
+def test_archived_placeholder_leaves_one_card_and_preserves_legacy_url_and_key(integration_environment):
+    client, remote, engine = integration_environment
+    legacy = remote.records["agents"][0]
+    legacy.update(slug=LEGACY_SLUG, engine_slug=LEGACY_SLUG, name="Бизнес-аналитик")
+    created = client.post("/api/integrations", headers=auth(),
+        json={"agent_slug": LEGACY_SLUG, "name": "Существующее подключение"})
+    assert created.status_code == 201, created.text
+    headers = {"Authorization": "Bearer " + created.json()["api_key"]}
+    authored_id = "40466f5f-1e54-4b52-bf63-5f280b79933a"
+    authored = card(id=authored_id, slug=SLUG, name="Бизнес-аналитик", engine_slug=SLUG,
+        description="Карточка разработчика с описанием анализа CSV и TSV.")
+    legacy["status"] = "archived"
+    remote.records["agents"].append(authored)
+    remote.records["connect_requests"][0]["agent_id"] = authored_id
+    remote.keys[0]["agent_id"] = authored_id
+
+    assert [row["id"] for row in client.get("/api/agents").json()["items"]] == [authored_id]
+    assert client.get(f"/api/agents/{LEGACY_SLUG}").json()["id"] == authored_id
+    reply = client.post(f"/api/agents/{LEGACY_SLUG}/run", headers=auth(), json={"message": "Как рассчитать прибыль?"})
+    assert reply.status_code == 200 and reply.json()["execution"]["agent"] == SLUG
+    reply = client.post(f"/api/agents/{LEGACY_SLUG}/v1/chat/completions", headers=headers,
+        json={"model": f"keme/{LEGACY_SLUG}", "messages": [{"role": "user", "content": "Как рассчитать прибыль?"}]})
+    assert reply.status_code == 200 and reply.json()["model"] == f"keme/{LEGACY_SLUG}"
+    assert remote.records["agent_runs"][-1]["agent_id"] == authored_id
     assert not engine.requests
 
 

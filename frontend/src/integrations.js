@@ -1,4 +1,5 @@
 import { all, request, BASE } from "./api.js";
+import { isAnalyticsAgent } from "./analytics-agent.js";
 
 const e = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
 export const integrationBase = (slug) => new URL(`${BASE}/agents/${encodeURIComponent(slug)}/v1`, location.origin).href;
@@ -73,7 +74,7 @@ export async function setupIntegrationHistory(grid, agents, connections, tell, s
       const rows = await request("/integrations");
       if (sequence !== historyRequest) return;
       list.innerHTML = rows.filter((row) => !row.revoked_at).map((row) => {
-        const agentName = agents.find((agent) => agent.slug === row.agent_slug)?.name || row.agent_slug;
+        const agentName = agents.find((agent) => agent.id === row.agent_id)?.name || row.agent_slug;
         return integrationRecord(row, agentName);
       }).join("") || emptyHistory;
     } catch {
@@ -141,7 +142,7 @@ export function renderIntegrationScreen(root, agent, files, tell, updateFiles) {
   document.title = `Настройка ${agent.name} — Keme AI`;
   const acceptedPurposes = agent.accepted_file_purposes;
   host.innerHTML = `
-    ${agent.slug === "business-analytics" ? '<p><a class="link" href="/account/?agent=business-analytics#agent-run" data-workspace-route>Запустить анализ CSV или TSV →</a></p>' : ""}
+    ${isAnalyticsAgent(agent.slug) ? `<p><a class="link" href="/account/?agent=${encodeURIComponent(agent.slug)}#agent-run" data-workspace-route>Запустить анализ CSV или TSV →</a></p>` : ""}
     <p class="muted">${acceptedPurposes.length
       ? "Задайте инструкции для агента и при необходимости добавьте документы. Агент будет использовать их при каждом API-запросе."
       : "Задайте инструкции и язык ответов для своего приложения."}</p>

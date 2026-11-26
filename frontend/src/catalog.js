@@ -1,4 +1,5 @@
 import { formatPrice } from "./price.js";
+import { findAgent } from "./analytics-agent.js";
 import { LANGS, T } from "./i18n.js";
 import { all, SLUGS } from "./api.js";
 import { catalogCopy, getAgent } from "./catalog-data.js";
@@ -106,7 +107,7 @@ function render() {
   });
   const id = url.searchParams.get("agent");
   if (id) {
-    const row = rows.find((r) => r.slug === (SLUGS[id] || id));
+    const row = findAgent(rows, SLUGS[id] || id);
     if (!row) {
       root.innerHTML = `<a href="/catalog/">${e(catalogCopy(lang).back)}</a>${catalogState === "ready" ? `<h1>${e(catalogCopy(lang).missing)}</h1>` : catalogNotice()}`;
       return;
