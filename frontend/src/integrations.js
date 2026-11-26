@@ -22,23 +22,6 @@ function copyField(id, name, value = "", secret = false) {
   </div>`;
 }
 
-function integrationRecord(row, agentName) {
-  const expiry = Date.parse(row.expires_at);
-  const expired = expiry <= Date.now();
-  const state = expired ? "Срок истёк" : "Активно до " + new Date(expiry).toLocaleDateString();
-  return `<article class="work-item integration-record">
-    <div class="integration-record-head">
-      <div><h3>${e(row.name)}</h3><p class="muted">${e(agentName)} · Ключ ${e(row.key_prefix)}… · Создано ${e(new Date(row.created_at).toLocaleDateString())}</p></div>
-      <span class="pill">${e(state)}</span>
-    </div>
-    <div class="integration-addresses">
-      ${copyField(`history-url-${row.id}`, "Base URL", integrationBase(row.agent_slug))}
-      ${copyField(`history-model-${row.id}`, "Model", `keme/${row.agent_slug}`)}
-    </div>
-    ${expired ? "" : `<button class="btn btn--secondary" type="button" data-revoke-integration="${e(row.id)}">Отозвать ключ</button>`}
-  </article>`;
-}
-
 function connectionRecord(connection, agent, statusLabel) {
   const agentName = agent?.name || "Агент недоступен";
   const canOpen = agent?.status === "published" || agent?.status === "coming_soon";
@@ -64,53 +47,94 @@ export function renderConnectionHistory(grid, agents, connections, statusLabel) 
   grid.append(history);
 }
 
-function setupAgentIntegrationHistory(history, agent, tell, box) {
-  const list = history.querySelector("#integration-list");
-  const emptyHistory = '<p class="muted">API-подключений пока нет.</p>';
-  let historyRequest = 0;
-  async function showList() {
-    const sequence = ++historyRequest;
-    list.setAttribute("aria-busy", "true");
+function setupCredentials(box, agent, tell) {
+  let connections = [];
+  let selectedId;
+  let issued;
+  let loaded = false;
+  let requestVersion = 0;
+
+  function render() {
+    const row = connections.find((item) => item.id === selectedId) || connections[0];
+    box.hidden = !row;
+    if (!row) {
+      box.replaceChildren();
+      return;
+    }
+    selectedId = row.id;
+    const key = issued?.id === row.id ? issued.key : null;
+    const expiry = new Date(row.expires_at).toLocaleDateString();
+    box.innerHTML = `<h2>${key ? "Подключение создано" : "Параметры подключения"}</h2>
+      ${connections.length > 1 ? `<div class="integration-field"><label for="integration-selection">Подключение</label>
+        <select id="integration-selection">${connections.map((item) => `<option value="${e(item.id)}" ${item.id === row.id ? "selected" : ""}>${e(item.name)} · ${e(item.key_prefix)}…</option>`).join("")}</select>
+      </div>` : ""}
+      <p class="muted">${key ? "Скопируйте ключ сейчас. Он действует до" : "Ключ действует до"} ${e(expiry)}.</p>
+      ${key ? copyField("integration-key", "API key", "", true)
+        : `<p class="muted">API key · ${e(row.key_prefix)}…</p>`}
+      ${copyField("integration-base", "Base URL", integrationBase(row.agent_slug))}
+      ${copyField("integration-model", "Model", `keme/${row.agent_slug}`)}
+      <details><summary>Пример запроса cURL</summary><pre class="work-code"></pre></details>
+      <div><button class="btn btn--secondary" type="button" data-revoke-integration="${e(row.id)}">Отозвать ключ</button></div>`;
+    if (key) box.querySelector("#integration-key").value = key;
+    box.querySelector("pre").textContent = integrationExample(row.agent_slug);
+  }
+
+  async function load() {
+    const version = ++requestVersion;
     try {
       const rows = await request("/integrations?agent_id=" + encodeURIComponent(agent.id));
-      if (sequence !== historyRequest) return;
-      list.innerHTML = rows.filter((row) => row.agent_id === agent.id && !row.revoked_at)
-        .map((row) => integrationRecord(row, agent.name)).join("") || emptyHistory;
+      if (version !== requestVersion || !box.isConnected) return;
+      loaded = true;
+      connections = rows.filter((row) => row.agent_id === agent.id && !row.revoked_at
+        && Date.parse(row.expires_at) > Date.now());
+      render();
     } catch {
-      if (sequence !== historyRequest) return;
-      list.innerHTML = '<p class="muted">Не удалось загрузить историю.</p><button type="button" class="btn btn--secondary" data-reload-integration-history>Повторить</button>';
-    } finally {
-      if (sequence === historyRequest) list.setAttribute("aria-busy", "false");
+      if (version !== requestVersion || !box.isConnected || connections.length) return;
+      box.hidden = false;
+      box.innerHTML = '<p class="muted">Не удалось загрузить параметры подключения.</p><div><button type="button" class="btn btn--secondary" data-reload-credentials>Повторить</button></div>';
     }
   }
-  enableCopy(history, tell);
-  history.addEventListener("click", async event => {
-    const button = event.target.closest("button"); if (!button) return;
-    if (button.hasAttribute("data-reload-integration-history")) {
+
+  box.addEventListener("change", (event) => {
+    if (event.target.id !== "integration-selection") return;
+    selectedId = event.target.value;
+    render();
+    box.querySelector("#integration-selection")?.focus();
+  });
+  box.addEventListener("click", async (event) => {
+    const button = event.target.closest("button");
+    if (!button) return;
+    if (button.hasAttribute("data-reload-credentials")) {
       button.disabled = true;
-      await showList();
+      await load();
       return;
     }
     const id = button.dataset.revokeIntegration;
-    if (id) {
-      button.disabled = true;
-      try {
-        await request("/integrations/" + encodeURIComponent(id), {method:"DELETE"});
-        if (!history.isConnected) return;
-        button.closest(".integration-record").remove();
-        if (!list.firstElementChild) list.innerHTML = emptyHistory;
-        if (box.dataset.integrationId === id) {
-          box.replaceChildren();
-          box.hidden = true;
-          delete box.dataset.integrationId;
-        }
-        tell("Ключ отозван.");
-        void showList();
-      } catch(error) { tell(error.message,true); button.disabled = false; }
+    if (!id) return;
+    button.disabled = true;
+    try {
+      await request("/integrations/" + encodeURIComponent(id), { method: "DELETE" });
+      if (!box.isConnected) return;
+      requestVersion++;
+      connections = connections.filter((row) => row.id !== id);
+      if (issued?.id === id) issued = undefined;
+      render();
+      tell("Ключ отозван.");
+    } catch (error) {
+      if (box.isConnected) tell(error.message, true);
+      button.disabled = false;
     }
   });
-  void showList();
-  return showList;
+  void load();
+  return ({ integration, api_key: key }) => {
+    if (!box.isConnected) return;
+    requestVersion++;
+    issued = { id: integration.id, key };
+    selectedId = integration.id;
+    connections = [integration, ...connections.filter((row) => row.id !== integration.id)];
+    render();
+    if (!loaded) void load();
+  };
 }
 
 function enableCopy(container, tell) {
@@ -143,7 +167,6 @@ export function renderIntegrationScreen(root, agent, files, tell, updateFiles) {
     <a class="link integration-back" href="${historyUrl}" data-workspace-route>← К истории подключений</a>
     <div class="work-grid">
       <section class="work-panel wide integration-screen" id="application-integrations"></section>
-      ${agent ? '<section class="work-panel wide" id="agent-integration-history"><h2>API-подключения</h2><div id="integration-list" aria-live="polite" aria-busy="true"></div></section>' : ""}
     </div>`;
   const host = root.querySelector("#application-integrations");
   if (!agent) {
@@ -154,7 +177,6 @@ export function renderIntegrationScreen(root, agent, files, tell, updateFiles) {
   const acceptedPurposes = agent.accepted_file_purposes;
   host.innerHTML = `
     <div class="work-row">
-      <a class="link" href="#agent-integration-history">API-подключения</a>
       <a class="link" href="${e(agentLink(agent.slug, "run"))}" data-workspace-route>${isAnalyticsAgent(agent.slug) ? "Запустить анализ CSV или TSV" : "Запустить агента"} →</a>
     </div>
     <p class="muted">${acceptedPurposes.length
@@ -185,18 +207,18 @@ export function renderIntegrationScreen(root, agent, files, tell, updateFiles) {
         <div id="integration-documents-list"></div>
       </fieldset>` : ""}
     <button class="btn btn--primary integration-submit" type="submit" form="integration-create">Создать API-подключение</button>
-    <div class="integration-credentials" id="integration-new" hidden></div>
+    <section class="integration-credentials" id="integration-new" hidden></section>
     <details class="integration-guide">
       <summary>Как подключить к приложению или LLM-клиенту</summary>
       <ol><li>Выберите провайдера OpenAI-compatible / Custom OpenAI.</li><li>Укажите Base URL и имя модели из созданного подключения.</li><li>В поле API key вставьте отдельный ключ Keme AI.</li><li>Отключите streaming. Поддерживаются текстовые сообщения.</li></ol>
-      <p class="muted">Храните ключ на сервере своего приложения. В истории подключений его можно отозвать.</p>
+      <p class="muted">Храните ключ на сервере своего приложения.</p>
     </details>`;
 
   const form = host.querySelector("#integration-create");
   const upload = host.querySelector("#integration-upload");
   const list = host.querySelector("#integration-documents-list");
   const box = host.querySelector("#integration-new");
-  const refreshHistory = setupAgentIntegrationHistory(root.querySelector("#agent-integration-history"), agent, tell, box);
+  const showCredentials = setupCredentials(box, agent, tell);
   let working = false;
 
   function renderDocuments(selected = new FormData(form).getAll("file_ids")) {
@@ -250,19 +272,8 @@ export function renderIntegrationScreen(root, agent, files, tell, updateFiles) {
         expires_in_days: Number(data.get("expires_in_days")),
         file_ids: data.getAll("file_ids"),
       } });
-      const { id, agent_slug: slug, expires_at: expiresAt } = result.integration;
-      box.innerHTML = `<h2>Подключение создано</h2>
-        <p class="muted">Скопируйте ключ сейчас. Он действует до ${e(new Date(expiresAt).toLocaleDateString())}.</p>
-        ${copyField("integration-key", "API key", "", true)}
-        ${copyField("integration-base", "Base URL", integrationBase(slug))}
-        ${copyField("integration-model", "Model", `keme/${slug}`)}
-        <details><summary>Пример запроса cURL</summary><pre class="work-code"></pre></details>
-        <a class="link" href="#agent-integration-history">Открыть API-подключения этого агента</a>`;
-      box.querySelector("#integration-key").value = result.api_key;
-      box.querySelector("pre").textContent = integrationExample(slug);
-      box.dataset.integrationId = id;
-      box.hidden = false;
-      void refreshHistory();
+      if (!box.isConnected) return;
+      showCredentials(result);
       tell("API-подключение создано. Скопируйте ключ в настройки своего приложения.");
       box.scrollIntoView({ behavior: "smooth", block: "center" });
     });
