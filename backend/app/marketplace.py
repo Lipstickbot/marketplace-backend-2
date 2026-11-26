@@ -104,7 +104,9 @@ async def connect_request(request_id: UUID, user: Business, token: Token, client
 
 @router.post("/connect-requests", response_model=ConnectRequest, status_code=201, tags=["Business"])
 async def create_connect_request(body: ConnectCreate, user: Business, token: Token, client: Client):
-    await one(client, "agents", Agent, token=token, filters={"id": f"eq.{body.agent_id}", "status": "eq.published"})
+    agent = await one(client, "agents", Agent, token=token, filters={"id": f"eq.{body.agent_id}", "status": "eq.published"})
+    if agent.price_minor is not None:
+        raise APIError(402, "purchase_required", "Чтобы подключить этого агента, оформите покупку.")
     rows = await client.request("POST", "/rest/v1/connect_requests", token=token, operation="marketplace", representation=True,
         body={"company_id": str(user.company_id), "requested_by": str(user.user_id), **body.model_dump(mode="json")})
     if not isinstance(rows, list) or len(rows) != 1:

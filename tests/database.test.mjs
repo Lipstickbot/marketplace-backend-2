@@ -89,7 +89,7 @@ test('catalog seed contains three explicit mock demos and nine coming-soon cards
 });
 
 test('all platform tables enable RLS and remove inherited TRUNCATE grants', async () => {
-  const tables = ['profiles', 'agents', 'connect_requests', 'agent_submissions', 'agent_runs', 'agent_files', 'agent_integrations'];
+  const tables = ['profiles', 'agents', 'connect_requests', 'agent_submissions', 'agent_runs', 'agent_files', 'agent_integrations', 'agent_purchases'];
   const { rows } = await query(`select relname, relrowsecurity from pg_class
     where relnamespace = 'public'::regnamespace and relkind = 'r' order by relname`);
   assert.deepEqual(rows.map((r) => r.relname), [...tables].sort());
@@ -415,4 +415,36 @@ test('only the backend activates a verified agent and businesses connect instant
   ));
   assert.deepEqual(connection, { status: 'approved', auto_approved: true });
   await denied(() => service(() => activate(ids.admin)), 'P0001');
+});
+
+test('priced cards require a server-confirmed purchase and repeated confirmation grants access once', async () => {
+  const { rows: [agent] } = await service(() => query(
+    "insert into public.agents(slug,name,category,status,engine_slug,auto_connect,price_minor) values ('paid-test','Paid','sales','published','paid-test',true,123400) returning id",
+  ));
+  const connect = () => query("insert into public.connect_requests(company_id,requested_by,agent_id) values ($1,$1,$2)", [ids.a, agent.id]);
+  const reserve = async (amount) => (await query(
+    "select public.reserve_agent_purchase($1,$2,$3) as result", [ids.a, agent.id, amount],
+  )).rows[0].result;
+  const confirm = async (order, token) => (await query(
+    "select public.complete_agent_purchase($1,$2,'provider-reference') as result", [order, token],
+  )).rows[0].result;
+  await denied(() => user(ids.a, connect));
+  await denied(() => user(ids.a, () => reserve(123400)));
+  assert.equal((await service(() => reserve(1))).reason, 'price_changed');
+  const first = await service(() => reserve(123400));
+  const duplicate = await service(() => reserve(123400));
+  assert.equal(first.reserved, true);
+  assert.equal(duplicate.reserved, false);
+  assert.equal(first.order.id, duplicate.order.id);
+  await denied(() => user(ids.a, () => query('select * from public.agent_purchases')));
+  await denied(() => user(ids.a, () => confirm(first.order.id, 'token')));
+  await service(() => query("update public.agent_purchases set provider_token='token' where id=$1", [first.order.id]));
+  assert.equal(await service(() => confirm(first.order.id, 'mismatch')), false);
+  const read = () => query('select status,auto_approved from public.connect_requests where agent_id=$1', [agent.id]);
+  assert.equal((await user(ids.a, read)).rows.length, 0);
+  assert.equal(await service(() => confirm(first.order.id, 'token')), true);
+  assert.equal(await service(() => confirm(first.order.id, 'token')), true);
+  assert.deepEqual((await user(ids.a, read)).rows, [{ status: 'approved', auto_approved: true }]);
+  assert.equal((await user(ids.b, read)).rows.length, 0);
+  assert.equal((await service(() => reserve(123400))).reason, 'already_connected');
 });

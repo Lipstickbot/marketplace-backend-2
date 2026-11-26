@@ -24,6 +24,7 @@ class Page(BaseModel, Generic[T]):
 
 
 class Agent(BaseModel):
+    price_minor: int | None = None
     id: UUID
     slug: str
     name: str

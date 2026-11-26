@@ -14,12 +14,25 @@ class HistoryItem(InputModel):
     content: str = Field(min_length=1, max_length=4000)
 
 
+class AnalysisDataset(InputModel):
+    filename: str = Field(min_length=5, max_length=255)
+    text: str
+
+    @field_validator("filename")
+    @classmethod
+    def validate_extension(cls, name):
+        if not name.lower().endswith((".csv", ".tsv")):
+            raise ValueError("Ожидается файл CSV или TSV.")
+        return name
+
+
 class RunInput(InputModel):
     message: str = Field(min_length=1, max_length=8000)
     language: Literal["ru", "kk", "en", "auto"] = "auto"
     file_ids: list[UUID] = Field(default_factory=list, max_length=10)
     options: dict = Field(default_factory=dict)
     history: list[HistoryItem] = Field(default_factory=list, max_length=10)
+    dataset: AnalysisDataset | None = None
 
     @field_validator("file_ids")
     @classmethod

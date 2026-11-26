@@ -1,0 +1,4 @@
+period,revenue,cost,orders,visits,conversions,ad_spend,ad_revenue,currency,region,channel,product,sku
+2026-01,120000,78000,120,2400,120,15000,45000,KZT,Алматы,Сайт,Чай,TEA-01
+2026-02,150000,103000,125,2500,125,18000,54000,KZT,Астана,Магазин,Кофе,COFFEE-02
+2026-03,165000,120000,132,3000,132,24000,60000,KZT,Алматы,Сайт,Чай,TEA-01

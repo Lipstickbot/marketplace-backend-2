@@ -10,7 +10,7 @@ Render service: `srv-dc1ej6qjnfac738icr1g`; workspace: My Workspace аккаун
 - Runtime: Docker; Dockerfile `./Dockerfile`; build context `.`; branch `main`.
 - Тариф: Free для публичного демо; регион Frankfurt.
 - Порт: 8001; Health Check: `/health`.
-- Текущий сервис создан через официальный CLI и обновляется вручную (auto-deploy off). `render.yaml` — проверенный шаблон для нового Blueprint с `checksPass`; текущий сервис к Blueprint не привязан. Подключение Git-провайдера и включение автообновлений выполняются отдельно.
+- Текущий сервис создан через официальный CLI. Автодеплой подготовлен через GitHub Actions. Он запускает Render после проверок и привязывает деплой к проверенному коммиту. Для настройки используйте раздел ниже.
 - Blueprint: `render.yaml`. Секретные значения в нём отсутствуют.
 
 Render Free засыпает после простоя; первое открытие может занять около минуты. Для постоянного производственного сервиса потребуется отдельно выбрать подходящий тариф. Два Free-сервиса в одном workspace используют общую квоту часов, поэтому лимит нужно учитывать, если размещать платформу и движок в одном аккаунте.
@@ -40,5 +40,15 @@ Render Free засыпает после простоя; первое откры�
 Docker-образ успешно собран на Render, деплой получил статус Live. Проверены публичные страницы, 12 карточек API, связь с движком и отказ без авторизации. Через опубликованный HTTPS Backend прошли 37 проверок: настоящий Supabase Auth/Storage/PostgreSQL, три вымышленных файла, четыре успешных запуска и одна ожидаемая ошибка HR, журнал и очистка. В Supabase тестовых аккаунтов, профилей и файлов не осталось; каталог из 12 карточек сохранён. Технический журнал тестов и вымышленные tenant остаются у движка, где нет API их удаления.
 
 Запуск повторной проверки с разрешёнными временными данными: `python scripts/check_cloud_engine_integration.py --backend-url https://keme-ai-platform.onrender.com`. Подтверждение почты и фактические Site URL/Redirect URLs через доступные средства автоматически не проверены и не изменялись; для пользовательского signup нужно проверить их в Supabase Dashboard.
+
+## Автодеплой бизнес-аналитика
+
+1. Убедитесь, что в каталоге есть одна карточка `business-analytics`. Публичный ID существующей карточки `d4050059-3984-4e4a-a811-deb07bed1f13`. Адрес карточки `/catalog/?agent=business-analytics`. Миграция `20261126190000_agent_purchases.sql` нужна перед отдельным включением продажи агентов.
+2. Проверьте, что оба сервиса Render привязаны к ветке `main` репозитория платформы через GitHub. В Render оставьте **Auto-Deploy → Off** для обоих сервисов. Точный коммит развернёт GitHub Actions.
+3. В GitHub создайте окружение **production** для ветки `main`. В его secrets задайте `RENDER_API_KEY` с правами на деплой двух сервисов и `SUPABASE_SECRET_KEY`. В variables задайте `RENDER_BACKEND_SERVICE_ID`, `RENDER_FRONTEND_SERVICE_ID`, `RENDER_BACKEND_URL` (HTTPS без `/api`), `SUPABASE_URL` и `SUPABASE_PUBLISHABLE_KEY`. В переменных самого репозитория задайте `RENDER_ANALYTICS_DEPLOY=true`.
+4. После слияния в `main` GitHub Actions проверит фронтенд, базу, API и 37 тестов агента. Затем скрипт развернёт бэкенд и проверит его по `/api/health/business-analytics`. Проверка выполнит текстовый запрос и расчёт прибыли на небольшой таблице и сверит SHA. При успехе скрипт обновит существующую карточку и развернёт фронтенд. При ошибке проверки шаг активации завершится ошибкой до изменения карточки.
+5. Войдите под тестовой бизнес-учётной записью, подключите «Бизнес-аналитика» и откройте запуск в кабинете. Проверьте текстовый запрос и UTF-8 таблицу из `agents/business_analytics/example.csv`. Проверьте запуск Marketing через внешний AI Engine.
+
+[Деплой точного коммита в Render](https://render.com/docs/deploys) · [Настройки Blueprint](https://render.com/docs/blueprint-spec) · [Покупка агентов](PAYMENTS.md)
 
 Документация: https://render.com/docs/blueprint-spec, https://render.com/docs/free, https://render.com/docs/configure-environment-variables.

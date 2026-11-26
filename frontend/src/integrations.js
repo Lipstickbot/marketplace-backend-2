@@ -141,7 +141,10 @@ export function renderIntegrationScreen(root, agent, files, tell, updateFiles) {
   document.title = `Настройка ${agent.name} — Keme AI`;
   const acceptedPurposes = agent.accepted_file_purposes;
   host.innerHTML = `
-    <p class="muted">Задайте инструкции для агента и при необходимости добавьте документы. Агент будет использовать их при каждом API-запросе.</p>
+    ${agent.slug === "business-analytics" ? '<p><a class="link" href="/account/?agent=business-analytics#agent-run" data-workspace-route>Запустить анализ CSV или TSV →</a></p>' : ""}
+    <p class="muted">${acceptedPurposes.length
+      ? "Задайте инструкции для агента и при необходимости добавьте документы. Агент будет использовать их при каждом API-запросе."
+      : "Задайте инструкции и язык ответов для своего приложения."}</p>
     <form class="work-form" id="integration-create">
       <div class="integration-fields">
         <label>Агент<input value="${e(agent.name)}" readonly></label>

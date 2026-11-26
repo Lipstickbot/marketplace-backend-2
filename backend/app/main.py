@@ -27,7 +27,7 @@ from .engine_client import EngineClient
 from .runtime_store import RuntimeStore
 from .body_limit import BodySizeLimit
 from .integrations import router as integrations_router
-from .payments import load_paylink_test, router as payments_router
+from .payments import router as payments_router
 
 
 class AuthRateLimiter:
@@ -69,7 +69,6 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
             yield
 
     app = FastAPI(title="Marketplace Backend 2", version="0.7.0", lifespan=lifespan)
-    app.state.paylink_test = load_paylink_test(Path(__file__).resolve().parents[2])
     app.include_router(marketplace_router)
     app.include_router(execution_router)
     app.include_router(integrations_router)

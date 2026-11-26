@@ -11,7 +11,7 @@ import {
 import { startGoogleLogin, finishGoogleLogin } from "./google-auth.js";
 import { goHomeAfterAuth } from "./auth-navigation.js";
 import { setupIntegrationHistory, renderIntegrationScreen } from "./integrations.js";
-import { setupTestPayments } from "./payments.js";
+import { formatPrice } from "./price.js";
 import "./glass-nav.js";
 const root = document.querySelector("#workspace"),
   notice = document.querySelector("#notice"),
@@ -154,6 +154,15 @@ function loadBusinessData() {
 }
 function renderBusinessRoute() {
   const url = new URL(location.href);
+  const order = url.searchParams.get("order");
+  if (url.searchParams.get("view") === "payments" && /^[0-9a-f-]{36}$/.test(order || "")) {
+    workspaceTitle.textContent = "Покупка агента";
+    root.innerHTML = `<div class="work-grid">${panel("Статус оплаты", '<p data-payment-status role="status"></p><form id="purchase-status"><button class="btn btn--secondary">Проверить оплату</button></form><p><a class="link" href="/account/">Вернуться в кабинет</a></p>', true)}</div>`;
+    const form = root.querySelector("#purchase-status");
+    form.dataset.order = order;
+    form.requestSubmit();
+    return;
+  }
   const openingAgent = url.searchParams.get("view") === "integration" || url.hash === "#application-integrations";
   if (openingAgent) {
     workspaceTitle.textContent = "Подключить к своему приложению";
@@ -176,11 +185,24 @@ function renderBusiness(chosen = new URLSearchParams(location.search).get("agent
   const options = published
     .map((a) => `<option value="${e(a.id)}" ${a.slug === chosen ? "selected" : ""}>${e(a.name)}</option>`)
     .join("");
-  root.innerHTML = `<div class="work-grid">${panel("Подключить готового агента", `<p class="muted">Выберите агента и опишите задачу для своей компании. Доступ к демо-агентам открывается сразу.</p><form id="connect" class="work-form"><label>Агент<select name="agent_id">${options}</select></label><label>Задача<textarea name="message" maxlength="4000"></textarea></label><button class="btn btn--primary">Подключить агента</button></form>`, true)}</div>`;
+  root.innerHTML = `<div class="work-grid">${panel("Подключить готового агента", `<form id="connect" class="work-form"><label>Агент<select name="agent_id" required>${options}</select></label><p class="muted" data-agent-price hidden></p><label data-connection-task>Задача<textarea name="message" maxlength="4000"></textarea></label><button class="btn btn--primary">Подключить агента</button></form>`, true)}</div>`;
+
+  const connect = root.querySelector("#connect");
+  const sync = () => {
+    const selected = published.find((a) => a.id === connect.elements.agent_id.value);
+    const connected = approved.some((a) => a.id === selected?.id);
+    const price = connect.querySelector("[data-agent-price]");
+    const paid = selected?.price_minor != null;
+    price.hidden = !paid;
+    price.textContent = paid ? formatPrice(selected.price_minor) : "";
+    connect.querySelector("[data-connection-task]").hidden = paid || connected;
+    connect.querySelector("button").textContent = connected ? "Открыть агента" : paid ? "Купить картой" : "Подключить агента";
+  };
+  connect.elements.agent_id.addEventListener("change", sync);
+  sync();
 
   const grid = root.querySelector(".work-grid");
   void setupIntegrationHistory(grid, agents, connections, tell, status);
-  setupTestPayments(grid);
   if (approved.length) renderTrialRun(grid, approved, chosen);
   grid.insertAdjacentHTML("beforeend", `<details class="work-panel wide workspace-details" id="run-history"><summary>История запусков</summary><div id="runs" aria-live="polite"></div></details>`);
   const history = grid.querySelector("#run-history");
@@ -188,12 +210,13 @@ function renderBusiness(chosen = new URLSearchParams(location.search).get("agent
     if (history.open) showRuns();
   });
   if (location.hash === "#integration-history") grid.querySelector("#integration-history")?.scrollIntoView();
+  if (location.hash === "#agent-run") grid.querySelector("#agent-run")?.scrollIntoView();
 }
 
 function renderTrialRun(grid, approved, chosen) {
-  grid.insertAdjacentHTML("beforeend", `<details class="work-panel wide workspace-details"><summary>Пробный запуск в кабинете</summary><div class="work-grid">${panel(
+  grid.insertAdjacentHTML("beforeend", `<details id="agent-run" class="work-panel wide workspace-details" ${chosen === "business-analytics" ? "open" : ""}><summary>Запуск агента в кабинете</summary><div class="work-grid">${panel(
     "Запуск агента",
-    `<p class="muted">Текущий движок возвращает демонстрационные ответы.</p><form id="run" class="work-form"><label>Агент<select name="slug">${approved.map((a) => `<option value="${e(a.slug)}" ${a.slug === chosen ? "selected" : ""}>${e(a.name)}</option>`).join("")}</select></label><label>Запрос<textarea name="message" required maxlength="8000"></textarea></label><label>Язык<select name="language"><option value="ru">Русский</option><option value="kk">Қазақша</option><option value="en">English</option><option value="auto">Автоматически</option></select></label><fieldset><legend>Документы для запроса</legend>${
+    `<form id="run" class="work-form"><label>Агент<select name="slug">${approved.map((a) => `<option value="${e(a.slug)}" ${a.slug === chosen ? "selected" : ""}>${e(a.name)}</option>`).join("")}</select></label><label>Запрос<textarea name="message" required maxlength="8000"></textarea></label><label>Язык<select name="language"><option value="ru">Русский</option><option value="kk">Қазақша</option><option value="en">English</option><option value="auto">Автоматически</option></select></label><label class="file-picker" data-analysis-file hidden>Таблица в UTF-8 (необязательно)<input name="dataset" type="file" accept=".csv,.tsv"><span class="muted">До 128 КиБ и 5 000 строк данных.</span></label><fieldset data-engine-files><legend>Документы для запроса</legend>${
       files
         .filter((f) => !f.deletion_requested_at)
         .map(
@@ -211,6 +234,10 @@ function renderTrialRun(grid, approved, chosen) {
 }
 function syncRunFiles(form) {
   const agent = agents.find((a) => a.slug === form.elements.slug.value);
+  const local = agent?.slug === "business-analytics";
+  form.querySelector("[data-analysis-file]").hidden = !local;
+  form.querySelector("[data-engine-files]").hidden = local;
+  if (!local) form.elements.dataset.value = "";
   form.querySelectorAll("[data-purpose]").forEach((label) => {
     const allowed = agent?.accepted_file_purposes.includes(
       label.dataset.purpose,
@@ -325,7 +352,7 @@ async function render() {
 function navigateBusinessView() {
   tell();
   renderBusinessRoute();
-  if (location.hash !== "#integration-history") window.scrollTo(0, 0);
+  if (!["#integration-history", "#agent-run"].includes(location.hash)) window.scrollTo(0, 0);
 }
 root.addEventListener("click", (event) => {
   const link = event.target.closest("a[data-workspace-route]");
@@ -403,7 +430,34 @@ root.addEventListener("submit", async (event) => {
         goHomeAfterAuth();
         return;
       }
+    } else if (form.id === "purchase-status") {
+      const output = root.querySelector("[data-payment-status]");
+      output.textContent = "Проверяем оплату…";
+      const purchase = await request("/payments/status/" + encodeURIComponent(form.dataset.order), { method: "POST" });
+      const agent = agents.find((a) => a.id === purchase.agent_id);
+      if (purchase.status === "paid" && agent) {
+        location.replace("/account/?view=integration&agent=" + encodeURIComponent(agent.slug));
+        return;
+      }
+      output.textContent = purchase.status === "paid" ? "Оплата подтверждена." : purchase.status === "failed"
+        ? "Оплата не завершена. Вы можете попробовать ещё раз в кабинете."
+        : "Ожидаем подтверждения PayLink. Проверьте статус ещё раз через несколько секунд.";
     } else if (form.id === "connect") {
+      const selected = agents.find((agent) => agent.id === value.agent_id);
+      if (selected && connections.some((c) => c.agent_id === selected.id && c.status === "approved")) {
+        location.assign("/account/?view=integration&agent=" + encodeURIComponent(selected.slug));
+        return;
+      }
+      if (selected?.price_minor != null) {
+        const payment = await request("/payments/checkout", { method: "POST",
+          body: { agent_id: selected.id, amount: selected.price_minor } });
+        if (payment.status === "connected") {
+          location.replace("/account/?view=integration&agent=" + encodeURIComponent(selected.slug));
+        } else {
+          location.assign(payment.redirect_url);
+        }
+        return;
+      }
       const connection = await request("/connect-requests", { method: "POST", body: value });
       connections.unshift(connection);
       tell(connectionNotice(connection.status));
@@ -412,6 +466,18 @@ root.addEventListener("submit", async (event) => {
       root.querySelector("#integration-history")?.scrollIntoView({ behavior: "smooth" });
     } else if (form.id === "run") {
       button.textContent = "Агент выполняет запрос…";
+      const selectedFile = data.get("dataset");
+      let dataset;
+      if (value.slug === "business-analytics" && selectedFile?.name) {
+        if (!/\.(csv|tsv)$/i.test(selectedFile.name)) throw new Error("Выберите CSV или TSV.");
+        if (selectedFile.size > 128 * 1024) throw new Error("Размер файла должен быть не больше 128 КиБ.");
+        if (!selectedFile.size) throw new Error("Файл пуст. Добавьте строку с данными.");
+        try {
+          dataset = { filename: selectedFile.name, text: new TextDecoder("utf-8", { fatal: true }).decode(await selectedFile.arrayBuffer()) };
+        } catch {
+          throw new Error("Сохраните таблицу в кодировке UTF-8.");
+        }
+      }
       const result = await request(
         "/agents/" + encodeURIComponent(value.slug) + "/run",
         {
@@ -422,12 +488,15 @@ root.addEventListener("submit", async (event) => {
             file_ids: data.getAll("file_ids"),
             options: {},
             history: [],
+            ...(dataset && { dataset }),
           },
         },
       );
       root.querySelector("#result").textContent = result.execution.response;
       root.querySelector("#result-meta").textContent =
-        `${status(result.execution.status)} · ${result.execution.mode === "mock" ? "Демонстрационный ответ (mock)" : result.execution.mode} · ${result.execution.usage.total_tokens} токенов${result.audit_saved ? "" : " · Журнал ожидает сверки"}`;
+        `${status(result.execution.status)} · ${value.slug === "business-analytics"
+          ? "Локальный анализ"
+          : `${result.execution.mode === "mock" ? "Демонстрационный ответ (mock)" : result.execution.mode} · ${result.execution.usage.total_tokens} токенов`}${result.audit_saved ? "" : " · Журнал ожидает сверки"}`;
       root.querySelector("#sources").innerHTML = result.execution.sources
         .map(
           (s) =>
@@ -461,6 +530,10 @@ root.addEventListener("submit", async (event) => {
     if (form.id === "auth" && error.code === "email_not_confirmed") {
       openConfirmation(value.email);
       return;
+    }
+    if (form.id === "purchase-status") {
+      const output = root.querySelector("[data-payment-status]");
+      if (output) output.textContent = "Статус оплаты пока не подтверждён.";
     }
     tell(
       error.message +

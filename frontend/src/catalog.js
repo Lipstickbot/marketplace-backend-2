@@ -1,3 +1,4 @@
+import { formatPrice } from "./price.js";
 import { LANGS, T } from "./i18n.js";
 import { all, SLUGS } from "./api.js";
 import { catalogCopy, getAgent } from "./catalog-data.js";
@@ -40,6 +41,8 @@ const categoryNames = {
   productivity: ["Продуктивность", "Өнімділік", "Productivity"],
 };
 const categoryLabel = (key) => categoryNames[key]?.[LANGS.indexOf(lang)] || key;
+const purchaseLabel = () => text("Купить", "Сатып алу", "Buy");
+const agentPrice = (row) => row.price_minor == null ? "" : e(formatPrice(row.price_minor, lang));
 const uiId = (slug) => Object.keys(SLUGS).find((id) => SLUGS[id] === slug);
 const text = (ru, kk, en) => ({ ru, kk, en })[lang];
 function display(row) {
@@ -66,7 +69,7 @@ function badge(row) {
 }
 function card(row) {
   const a = display(row);
-  return `<article class="acard directory-card"><div class="acard__top">${agentMark(a.id)}<span class="pill">${badge(row)}</span></div><p class="acard__cat">${e(a.category)}</p><h3><a href="${profileUrl(row)}">${e(a.name)}</a></h3><p class="acard__task">${e(a.task)}</p><div class="directory-card__foot"><a class="link" href="${profileUrl(row)}">${e(catalogCopy(lang).profile)}</a>${row.status === "published" ? `<a class="link" href="/account/?agent=${encodeURIComponent(row.slug)}&intent=connect">${text("Подключить", "Қосу", "Connect")} →</a>` : ""}</div></article>`;
+  return `<article class="acard directory-card"><div class="acard__top">${agentMark(a.id)}<span class="pill">${badge(row)}</span></div><p class="acard__cat">${e(a.category)}</p><h3><a href="${profileUrl(row)}">${e(a.name)}</a></h3><p class="acard__task">${e(a.task)}</p><div class="directory-card__foot"><a class="link" href="${profileUrl(row)}">${e(catalogCopy(lang).profile)}</a>${row.status === "published" ? `<a class="link" href="/account/?agent=${encodeURIComponent(row.slug)}&intent=connect">${agentPrice(row) ? `${purchaseLabel()} · ${agentPrice(row)}` : text("Подключить", "Қосу", "Connect")} →</a>` : ""}</div></article>`;
 }
 function results() {
   const matches = rows.filter((row) => {
@@ -109,11 +112,11 @@ function render() {
       return;
     }
     const a = display(row);
-    root.innerHTML = `<a class="link directory-back" href="/catalog/">${e(catalogCopy(lang).back)}</a><div class="profile-grid"><section class="profile-intro"><div class="profile-identity">${agentMark(a.id)}<span class="pill">${badge(row)}</span></div><h1 class="display">${e(a.name)}</h1><p class="lead">${e(a.task)}</p><ul class="acard__does">${a.features.map((f) => `<li>${e(f)}</li>`).join("")}</ul>${row.status === "published" ? `<a class="btn btn--primary" href="/account/?agent=${encodeURIComponent(row.slug)}&intent=connect">${text("Подключить под свою задачу", "Өз міндетіме қосу", "Connect for my task")}</a>` : `<p>${text("Подключение появится позже.", "Қосылу кейінірек қолжетімді болады.", "Connection will be available later.")}</p>`}</section><section class="profile-example"><h2 class="h2">${e(catalogCopy(lang).sample)}</h2><p>${e(a.input || a.task)}</p><p>${e(a.output || "")}</p><p class="note">${row.status === "published" && uiId(row.engine_slug) ? text("Демонстрационный режим. Войдите в кабинет, чтобы подключить агента.", "Демо режимі. Агентті қосу үшін жеке кабинетке кіріңіз.", "Demo mode. Sign in to your workspace to connect this agent.") : badge(row)}</p></section></div>`;
+    root.innerHTML = `<a class="link directory-back" href="/catalog/">${e(catalogCopy(lang).back)}</a><div class="profile-grid"><section class="profile-intro"><div class="profile-identity">${agentMark(a.id)}<span class="pill">${badge(row)}</span></div><h1 class="display">${e(a.name)}</h1><p class="lead">${e(a.task)}</p><ul class="acard__does">${a.features.map((f) => `<li>${e(f)}</li>`).join("")}</ul>${row.status === "published" ? `<a class="btn btn--primary" href="/account/?agent=${encodeURIComponent(row.slug)}&intent=connect">${agentPrice(row) ? `${purchaseLabel()} · ${agentPrice(row)}` : text("Подключить под свою задачу", "Өз міндетіме қосу", "Connect for my task")}</a>` : `<p>${text("Подключение появится позже.", "Қосылу кейінірек қолжетімді болады.", "Connection will be available later.")}</p>`}</section><section class="profile-example"><h2 class="h2">${e(catalogCopy(lang).sample)}</h2><p>${e(a.input || a.task)}</p><p>${e(a.output || "")}</p><p class="note">${row.status === "published" && uiId(row.engine_slug) ? text("Демонстрационный режим. Войдите в кабинет, чтобы подключить агента.", "Демо режимі. Агентті қосу үшін жеке кабинетке кіріңіз.", "Demo mode. Sign in to your workspace to connect this agent.") : badge(row)}</p></section></div>`;
     return;
   }
   const c = catalogCopy(lang);
-  root.innerHTML = `<header class="directory-head"><h1 class="display">${e(c.title)}</h1><p class="lead">${text("Три демо-агента доступны для подключения. Остальные направления готовятся к запуску.", "Үш демо-агент қосылуға қолжетімді. Қалған бағыттар әзірленуде.", "Three demo agents are available to connect. More business areas are coming soon.")}</p></header><div class="directory-tools"><label class="directory-search"><input id="search" type="search" placeholder="${e(c.search)}" aria-label="${e(c.search)}"></label><label>${e(c.filter)} <select id="group"><option value="all">${e(c.all)}</option>${[...new Set(rows.map((r) => r.category))].map((category) => `<option value="${e(category)}">${e(categoryLabel(category))}</option>`).join("")}</select></label></div><p id="count" class="directory-count" role="status"></p><div id="matches" class="acards"></div>`;
+  root.innerHTML = `<header class="directory-head"><h1 class="display">${e(c.title)}</h1><p class="lead">${text("Выберите агента для задачи вашей компании.", "Компанияңыздың міндетіне сай агентті таңдаңыз.", "Find an agent for your company’s task.")}</p></header><div class="directory-tools"><label class="directory-search"><input id="search" type="search" placeholder="${e(c.search)}" aria-label="${e(c.search)}"></label><label>${e(c.filter)} <select id="group"><option value="all">${e(c.all)}</option>${[...new Set(rows.map((r) => r.category))].map((category) => `<option value="${e(category)}">${e(categoryLabel(category))}</option>`).join("")}</select></label></div><p id="count" class="directory-count" role="status"></p><div id="matches" class="acards"></div>`;
   root.querySelector("#search").value = query;
   const add = document.createElement("a"); add.className = "btn btn--primary directory-add";
   add.href = "/account/?intent=publish#submission";

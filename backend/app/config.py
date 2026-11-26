@@ -25,6 +25,10 @@ class Settings(BaseModel):
     engine_jwt_ttl_seconds: int = Field(default=300, ge=60, le=600)
     engine_timeout_seconds: float = Field(default=180, ge=1, le=300)
     runtime_timeout_seconds: float = Field(default=60, ge=5, le=180)
+    paylink_live_enabled: bool = False
+    paylink_live_shop_id: int | None = Field(default=None, gt=0)
+    paylink_live_secret_key: SecretStr | None = None
+    paylink_notification_base: str | None = None
 
     @field_validator("supabase_url", "engine_url")
     @classmethod
@@ -42,6 +46,15 @@ class Settings(BaseModel):
     def validate_server_key(cls, value):
         if value is not None and not value.get_secret_value().startswith("sb_secret_"):
             raise ValueError("Use a current Supabase server secret key")
+        return value
+
+    @field_validator("paylink_notification_base")
+    @classmethod
+    def validate_paylink_notification_base(cls, value):
+        if value is not None:
+            value = cls.validate_url(value)
+            if not value.startswith("https://"):
+                raise ValueError("PayLink notifications require an HTTPS base URL")
         return value
 
     @field_validator("engine_jwt_secret")
@@ -88,4 +101,8 @@ class Settings(BaseModel):
             engine_jwt_ttl_seconds=values.get("ENGINE_JWT_TTL_SECONDS") or 300,
             engine_timeout_seconds=values.get("ENGINE_TIMEOUT_SECONDS") or 180,
             runtime_timeout_seconds=values.get("RUNTIME_TIMEOUT_SECONDS") or 60,
+            paylink_live_enabled=values.get("PAYLINK_LIVE_ENABLED") or False,
+            paylink_live_shop_id=values.get("PAYLINK_LIVE_SHOP_ID") or None,
+            paylink_live_secret_key=values.get("PAYLINK_LIVE_SECRET_KEY") or None,
+            paylink_notification_base=values.get("PAYLINK_NOTIFICATION_BASE") or None,
         )

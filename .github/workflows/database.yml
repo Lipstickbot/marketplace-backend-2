@@ -46,3 +46,28 @@ jobs:
           cache-dependency-path: backend/requirements*.txt
       - run: python -m pip install -r backend/requirements-dev.txt
       - run: python -m pytest backend/tests -q
+      - run: python -m unittest agents.business_analytics.test_agent
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.RENDER_ANALYTICS_DEPLOY == 'true'
+    needs: [frontend, database, auth]
+    runs-on: ubuntu-latest
+    timeout-minutes: 36
+    environment: production
+    concurrency:
+      group: render-production
+      cancel-in-progress: false
+    env:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      RENDER_BACKEND_SERVICE_ID: ${{ vars.RENDER_BACKEND_SERVICE_ID }}
+      RENDER_FRONTEND_SERVICE_ID: ${{ vars.RENDER_FRONTEND_SERVICE_ID }}
+      RENDER_BACKEND_URL: ${{ vars.RENDER_BACKEND_URL }}
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -r backend/requirements.txt
+      - run: python -m scripts.deploy_business_analytics
