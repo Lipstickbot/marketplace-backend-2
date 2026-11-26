@@ -27,6 +27,7 @@ from .engine_client import EngineClient
 from .runtime_store import RuntimeStore
 from .body_limit import BodySizeLimit
 from .integrations import router as integrations_router
+from .payments import load_paylink_test, router as payments_router
 
 
 class AuthRateLimiter:
@@ -47,7 +48,8 @@ class AuthRateLimiter:
 
 
 def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTransport | None = None,
-               engine_transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
+               engine_transport: httpx.AsyncBaseTransport | None = None,
+               paylink_transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
 
     @asynccontextmanager
@@ -57,16 +59,21 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
                    httpx.AsyncClient(timeout=httpx.Timeout(settings.runtime_timeout_seconds, connect=10, pool=10),
                                      transport=transport, follow_redirects=False, trust_env=False) as runtime_http, \
                    httpx.AsyncClient(timeout=httpx.Timeout(settings.engine_timeout_seconds, connect=10, pool=10),
-                                     transport=engine_transport, follow_redirects=False, trust_env=False) as engine_http:
+                                     transport=engine_transport, follow_redirects=False, trust_env=False) as engine_http, \
+                   httpx.AsyncClient(timeout=12, transport=paylink_transport, follow_redirects=False,
+                                     trust_env=False) as paylink_http:
             app.state.gateway = SupabaseGateway(settings, client)
             app.state.runtime_store = RuntimeStore(settings, runtime_http)
             app.state.engine_client = EngineClient(settings, engine_http)
+            app.state.paylink_http = paylink_http
             yield
 
     app = FastAPI(title="Marketplace Backend 2", version="0.7.0", lifespan=lifespan)
+    app.state.paylink_test = load_paylink_test(Path(__file__).resolve().parents[2])
     app.include_router(marketplace_router)
     app.include_router(execution_router)
     app.include_router(integrations_router)
+    app.include_router(payments_router)
     app.add_middleware(BodySizeLimit)
     app.state.auth_limiter = AuthRateLimiter(settings.auth_requests_per_minute)
     app.add_middleware(CORSMiddleware, allow_origins=list(settings.cors_origins),

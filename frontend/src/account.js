@@ -11,6 +11,7 @@ import {
 import { startGoogleLogin, finishGoogleLogin } from "./google-auth.js";
 import { goHomeAfterAuth } from "./auth-navigation.js";
 import { setupIntegrationHistory, renderIntegrationScreen } from "./integrations.js";
+import { setupTestPayments } from "./payments.js";
 import "./glass-nav.js";
 const root = document.querySelector("#workspace"),
   notice = document.querySelector("#notice"),
@@ -179,6 +180,7 @@ function renderBusiness(chosen = new URLSearchParams(location.search).get("agent
 
   const grid = root.querySelector(".work-grid");
   void setupIntegrationHistory(grid, agents, connections, tell, status);
+  setupTestPayments(grid);
   if (approved.length) renderTrialRun(grid, approved, chosen);
   grid.insertAdjacentHTML("beforeend", `<details class="work-panel wide workspace-details" id="run-history"><summary>История запусков</summary><div id="runs" aria-live="polite"></div></details>`);
   const history = grid.querySelector("#run-history");
