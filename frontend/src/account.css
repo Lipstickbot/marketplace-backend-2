@@ -208,6 +208,8 @@
 .integration-guide { margin-top: 24px; line-height: 1.8; }
 .integration-guide summary, .integration-credentials summary { cursor: pointer; font-weight: 600; }
 .integration-credentials { margin-top: 24px; padding: 24px; border: 1px solid #92b9eb; background: #edf5ff; border-radius: 18px; display: grid; gap: 16px; }
+.integration-status:not(:empty) { margin-top: 12px; color: #176544; font-size: 15px; }
+.integration-status.error:not(:empty) { color: #8b2d20; }
 .integration-field { display: grid; gap: 8px; min-width: 0; }
 .integration-field label { font-size: 15px; font-weight: 500; }
 .integration-field :is(input, select) { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: var(--r-sm); font: inherit; }

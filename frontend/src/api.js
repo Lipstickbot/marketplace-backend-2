@@ -63,7 +63,7 @@ async function refresh(rejectedToken = null) {
 }
 export async function request(
   path,
-  { method = "GET", body, auth = true, binary = false } = {},
+  { method = "GET", body, auth = true, binary = false, retryUnauthorized = method === "GET" } = {},
 ) {
   if (auth && !session())
     throw new ApiError(401, {
@@ -99,8 +99,8 @@ export async function request(
   } catch {
     throw new Error("Сервер недоступен. Запрос не повторён автоматически.");
   }
-  // Retry reads only: a POST execution can consume quota even after a timeout.
-  if (response.status === 401 && auth && method === "GET") {
+  // Writes opt in only when the endpoint supports a safe retry after failed authentication.
+  if (response.status === 401 && auth && retryUnauthorized) {
     await refresh(sentToken);
     response = await send();
   }

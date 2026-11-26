@@ -137,7 +137,14 @@ def test_revoked_expired_wrong_keys_and_other_agents_cannot_run(environment):
     remote.keys[0]['expires_at']='2020-01-01T00:00:00+00:00'
     assert ask(client,key).status_code==401
     remote.keys[0]['expires_at']='2099-01-01T00:00:00+00:00'
-    assert client.delete('/api/integrations/'+data['integration']['id'],headers=auth()).status_code==204
+    url = '/api/integrations/' + data['integration']['id']
+    remote.profiles['dev']['role'] = 'business'
+    assert client.delete(url, headers=auth('dev')).status_code == 404
+    assert client.delete(url, headers=auth()).status_code == 204
+    revoked_at = remote.keys[0]['revoked_at']
+    assert revoked_at is not None
+    assert client.delete(url, headers=auth()).status_code == 204
+    assert remote.keys[0]['revoked_at'] == revoked_at
     assert ask(client,key).status_code==401
     assert not engine.requests
 

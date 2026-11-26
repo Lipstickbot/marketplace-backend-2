@@ -47,12 +47,13 @@ export function renderConnectionHistory(grid, agents, connections, statusLabel) 
   grid.append(history);
 }
 
-function setupCredentials(box, agent, tell) {
+function setupCredentials(box, revokeStatus, agent) {
   let connections = [];
   let selectedId;
   let issued;
   let loaded = false;
   let requestVersion = 0;
+  let revoking = false;
 
   function render() {
     const row = connections.find((item) => item.id === selectedId) || connections[0];
@@ -66,7 +67,7 @@ function setupCredentials(box, agent, tell) {
     const expiry = new Date(row.expires_at).toLocaleDateString();
     box.innerHTML = `<h2>${key ? "Подключение создано" : "Параметры подключения"}</h2>
       ${connections.length > 1 ? `<div class="integration-field"><label for="integration-selection">Подключение</label>
-        <select id="integration-selection">${connections.map((item) => `<option value="${e(item.id)}" ${item.id === row.id ? "selected" : ""}>${e(item.name)} · ${e(item.key_prefix)}…</option>`).join("")}</select>
+        <select id="integration-selection" ${revoking ? "disabled" : ""}>${connections.map((item) => `<option value="${e(item.id)}" ${item.id === row.id ? "selected" : ""}>${e(item.name)} · ${e(item.key_prefix)}…</option>`).join("")}</select>
       </div>` : ""}
       <p class="muted">${key ? "Скопируйте ключ сейчас. Он действует до" : "Ключ действует до"} ${e(expiry)}.</p>
       ${key ? copyField("integration-key", "API key", "", true)
@@ -74,7 +75,7 @@ function setupCredentials(box, agent, tell) {
       ${copyField("integration-base", "Base URL", integrationBase(row.agent_slug))}
       ${copyField("integration-model", "Model", `keme/${row.agent_slug}`)}
       <details><summary>Пример запроса cURL</summary><pre class="work-code"></pre></details>
-      <div><button class="btn btn--secondary" type="button" data-revoke-integration="${e(row.id)}">Отозвать ключ</button></div>`;
+      <div><button class="btn btn--secondary" type="button" data-revoke-integration="${e(row.id)}" ${revoking ? "disabled" : ""}>${revoking ? "Отзываем ключ…" : "Отозвать ключ"}</button></div>`;
     if (key) box.querySelector("#integration-key").value = key;
     box.querySelector("pre").textContent = integrationExample(row.agent_slug);
   }
@@ -110,24 +111,35 @@ function setupCredentials(box, agent, tell) {
       return;
     }
     const id = button.dataset.revokeIntegration;
-    if (!id) return;
+    if (!id || revoking) return;
+    const name = connections.find((item) => item.id === id)?.name;
+    revoking = true;
     button.disabled = true;
+    button.textContent = "Отзываем ключ…";
+    const selection = box.querySelector("#integration-selection");
+    if (selection) selection.disabled = true;
+    revokeStatus.classList.remove("error");
+    revokeStatus.textContent = "Отзываем ключ…";
     try {
-      await request("/integrations/" + encodeURIComponent(id), { method: "DELETE" });
+      await request("/integrations/" + encodeURIComponent(id), { method: "DELETE", retryUnauthorized: true });
       if (!box.isConnected) return;
       requestVersion++;
       connections = connections.filter((row) => row.id !== id);
       if (issued?.id === id) issued = undefined;
-      render();
-      tell("Ключ отозван.");
+      revokeStatus.textContent = name ? `Ключ «${name}» отозван.` : "Ключ отозван.";
     } catch (error) {
-      if (box.isConnected) tell(error.message, true);
-      button.disabled = false;
+      if (!box.isConnected) return;
+      revokeStatus.classList.add("error");
+      revokeStatus.textContent = error.message;
+    } finally {
+      revoking = false;
+      if (box.isConnected) render();
     }
   });
   void load();
   return ({ integration, api_key: key }) => {
     if (!box.isConnected) return;
+    if (!revoking) revokeStatus.textContent = "";
     requestVersion++;
     issued = { id: integration.id, key };
     selectedId = integration.id;
@@ -208,6 +220,7 @@ export function renderIntegrationScreen(root, agent, files, tell, updateFiles) {
       </fieldset>` : ""}
     <button class="btn btn--primary integration-submit" type="submit" form="integration-create">Создать API-подключение</button>
     <section class="integration-credentials" id="integration-new" hidden></section>
+    <p class="integration-status" id="integration-revoke-status" role="status"></p>
     <details class="integration-guide">
       <summary>Как подключить к приложению или LLM-клиенту</summary>
       <ol><li>Выберите провайдера OpenAI-compatible / Custom OpenAI.</li><li>Укажите Base URL и имя модели из созданного подключения.</li><li>В поле API key вставьте отдельный ключ Keme AI.</li><li>Отключите streaming. Поддерживаются текстовые сообщения.</li></ol>
@@ -218,7 +231,7 @@ export function renderIntegrationScreen(root, agent, files, tell, updateFiles) {
   const upload = host.querySelector("#integration-upload");
   const list = host.querySelector("#integration-documents-list");
   const box = host.querySelector("#integration-new");
-  const showCredentials = setupCredentials(box, agent, tell);
+  const showCredentials = setupCredentials(box, host.querySelector("#integration-revoke-status"), agent);
   let working = false;
 
   function renderDocuments(selected = new FormData(form).getAll("file_ids")) {

@@ -99,9 +99,10 @@ async def create_integration(body: IntegrationCreate, user: Business, token: Tok
 
 @router.delete("/integrations/{integration_id}", status_code=204)
 async def revoke_integration(integration_id: UUID, user: Business, store: Store):
-    rows = await store.request("PATCH", TABLE, params={**owned(user), "id": f"eq.{integration_id}"},
+    filters = {**owned(user), "id": f"eq.{integration_id}", "select": "id"}
+    rows = await store.request("PATCH", TABLE, params={**filters, "revoked_at": "is.null"},
                                body={"revoked_at": datetime.now(UTC).isoformat()})
-    if not rows:
+    if not rows and not await store.request("GET", TABLE, params=filters):
         raise APIError(404, "not_found", "Подключение не найдено.")
     return Response(status_code=204)
 
