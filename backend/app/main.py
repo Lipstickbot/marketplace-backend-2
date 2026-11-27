@@ -49,7 +49,8 @@ class AuthRateLimiter:
 
 def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTransport | None = None,
                engine_transport: httpx.AsyncBaseTransport | None = None,
-               paylink_transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
+               paylink_transport: httpx.AsyncBaseTransport | None = None,
+               architect_transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
 
     @asynccontextmanager
@@ -61,11 +62,14 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
                    httpx.AsyncClient(timeout=httpx.Timeout(settings.engine_timeout_seconds, connect=10, pool=10),
                                      transport=engine_transport, follow_redirects=False, trust_env=False) as engine_http, \
                    httpx.AsyncClient(timeout=12, transport=paylink_transport, follow_redirects=False,
-                                     trust_env=False) as paylink_http:
+                                     trust_env=False) as paylink_http, \
+                   httpx.AsyncClient(timeout=28, transport=architect_transport, follow_redirects=False,
+                                     trust_env=False) as architect_http:
             app.state.gateway = SupabaseGateway(settings, client)
             app.state.runtime_store = RuntimeStore(settings, runtime_http)
             app.state.engine_client = EngineClient(settings, engine_http)
             app.state.paylink_http = paylink_http
+            app.state.architect_http = architect_http
             yield
 
     app = FastAPI(title="Marketplace Backend 2", version="0.7.0", lifespan=lifespan)

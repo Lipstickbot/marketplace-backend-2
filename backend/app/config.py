@@ -25,6 +25,8 @@ class Settings(BaseModel):
     engine_jwt_ttl_seconds: int = Field(default=300, ge=60, le=600)
     engine_timeout_seconds: float = Field(default=180, ge=1, le=300)
     runtime_timeout_seconds: float = Field(default=60, ge=5, le=180)
+    architect_gemini_api_key: SecretStr | None = None
+    architect_gemini_model: str = Field(default="gemini-3.5-flash-lite", pattern=r"^gemini-[a-z0-9][a-z0-9.-]{0,78}$")
     paylink_live_enabled: bool = False
     paylink_live_shop_id: int | None = Field(default=None, gt=0)
     paylink_live_secret_key: SecretStr | None = None
@@ -101,6 +103,8 @@ class Settings(BaseModel):
             engine_jwt_ttl_seconds=values.get("ENGINE_JWT_TTL_SECONDS") or 300,
             engine_timeout_seconds=values.get("ENGINE_TIMEOUT_SECONDS") or 180,
             runtime_timeout_seconds=values.get("RUNTIME_TIMEOUT_SECONDS") or 60,
+            architect_gemini_api_key=values.get("ARCHITECT_GEMINI_API_KEY") or None,
+            architect_gemini_model=values.get("ARCHITECT_GEMINI_MODEL") or "gemini-3.5-flash-lite",
             paylink_live_enabled=values.get("PAYLINK_LIVE_ENABLED") or False,
             paylink_live_shop_id=values.get("PAYLINK_LIVE_SHOP_ID") or None,
             paylink_live_secret_key=values.get("PAYLINK_LIVE_SECRET_KEY") or None,

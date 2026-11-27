@@ -51,4 +51,12 @@ Docker-образ успешно собран на Render, деплой полу
 
 [Деплой точного коммита в Render](https://render.com/docs/deploys) · [Настройки Blueprint](https://render.com/docs/blueprint-spec) · [Покупка агентов](PAYMENTS.md)
 
+## ARCHITECT
+
+ARCHITECT работает в бэкенде Keme AI через Gemini. При Docker-сборке скачиваются промпт и справочные материалы Рустама из [зафиксированного коммита](https://github.com/Bigfigboy/ARCHITECT-AI-Systems-Business-Analyst/tree/6d21df5c7bc9cc41b2c7bd65693a8288aa6008b9). Для запуска из исходников выполните `python -m scripts.fetch_architect_materials`.
+
+1. Добавьте ключ проекта Gemini в переменную `ARCHITECT_GEMINI_API_KEY` сервиса `keme-ai-platform` в Render. По умолчанию используется `gemini-3.5-flash-lite`. Модель можно задать через `ARCHITECT_GEMINI_MODEL`.
+2. После развёртывания откройте заявку ARCHITECT. Выберите «Одобрить и активировать» и укажите `architect-sa-mentor` как идентификатор исполнителя и адрес карточки. Бэкенд опубликует карточку после тестового ответа Gemini.
+3. Подключите опубликованного агента в бизнес-кабинете и отправьте тестовый запрос по системному анализу. Поддерживаются текстовые запросы на русском и английском. Текст запроса передаётся Gemini.
+
 Документация: https://render.com/docs/blueprint-spec, https://render.com/docs/free, https://render.com/docs/configure-environment-variables.

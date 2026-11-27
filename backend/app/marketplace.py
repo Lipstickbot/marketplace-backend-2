@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Path, Query, Request
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
+from . import architect
 from .auth import current_token, gateway, require_roles
 from .business_analytics import LEGACY_SLUG, SLUG as ANALYTICS_SLUG
 from .engine_client import EngineError
@@ -194,12 +195,21 @@ async def review_submission(submission_id: UUID, body: SubmissionReview, user: A
         if submission.status != "pending":
             raise APIError(409, "already_reviewed", "Заявка уже рассмотрена.")
         engine = request.app.state.engine_client
-        try:
-            metadata = await engine.agent_metadata(body.engine_slug)
-        except EngineError as exc:
-            if exc.status == 404:
-                raise APIError(422, "engine_agent_not_found", "Агент с таким slug не найден в AI Engine.") from None
-            raise
+        is_architect_submission = architect.matches_repository(submission.repository_url)
+        if body.engine_slug == architect.SLUG:
+            if not is_architect_submission:
+                raise APIError(422, "architect_repository_mismatch", "Этот идентификатор закреплён за репозиторием ARCHITECT.")
+            await architect.verify(engine.settings, request.app.state.architect_http)
+            metadata = architect.metadata()
+        else:
+            if is_architect_submission:
+                raise APIError(422, "architect_slug_required", "Для ARCHITECT укажите идентификатор architect-sa-mentor.")
+            try:
+                metadata = await engine.agent_metadata(body.engine_slug)
+            except EngineError as exc:
+                if exc.status == 404:
+                    raise APIError(422, "engine_agent_not_found", "Агент с таким slug не найден в AI Engine.") from None
+                raise
         try:
             if not isinstance(metadata, dict) or metadata.get("slug") != body.engine_slug:
                 raise ValueError

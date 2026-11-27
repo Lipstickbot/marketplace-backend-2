@@ -7,6 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, Form, Path, Request, Response, UploadFile
 from pydantic import ValidationError
 
+from . import architect
 from .engine_client import EngineClient, EngineError
 from .business_analytics import ANALYTICS_SLUGS, SLUG as ANALYTICS_SLUG, run_local, smoke as smoke_analytics
 from .engine_models import EngineRunMetadata, Execution, RunInput, RunRecord, RunResponse, StoredFile
@@ -64,7 +65,9 @@ async def run_agent(slug: Annotated[str, Path(pattern=r"^[a-z][a-z0-9-]{0,79}$")
     agent = await catalog_agent(client, slug, token=token)
     if not agent.engine_slug:
         raise APIError(422, "agent_not_executable", "У агента нет подключённого исполнителя.")
-    local = agent.slug in ANALYTICS_SLUGS and agent.engine_slug == agent.slug
+    local_analytics = agent.slug in ANALYTICS_SLUGS and agent.engine_slug == agent.slug
+    local_architect = agent.engine_slug == architect.SLUG
+    local = local_analytics or local_architect
     rows = await client.request("GET", "/rest/v1/connect_requests", token=token, operation="marketplace",
         params={"company_id": f"eq.{user.company_id}", "agent_id": f"eq.{agent.id}", "status": "eq.approved", "limit": "1"})
     if not isinstance(rows, list) or len(rows) != 1:
@@ -73,9 +76,13 @@ async def run_agent(slug: Annotated[str, Path(pattern=r"^[a-z][a-z0-9-]{0,79}$")
     if approved.company_id != user.company_id or approved.agent_id != agent.id or approved.status != "approved":
         raise APIError(403, "agent_not_connected", "Подключение агента не подтверждено.")
     store.require_configured()
-    if body.dataset and not local:
+    if local_architect:
+        architect.require_configured(store.settings)
+        architect.validate_input(body)
+        request.app.state.auth_limiter.check(f"architect:{user.user_id}")
+    if body.dataset and not local_analytics:
         raise APIError(422, "dataset_not_supported", "CSV и TSV доступны для агента «Бизнес-аналитик».")
-    if local and body.file_ids:
+    if local_analytics and body.file_ids:
         raise APIError(422, "stored_files_not_supported", "Выберите CSV или TSV прямо в форме запуска.")
     if not local:
         engine.token(user)
@@ -95,8 +102,10 @@ async def run_agent(slug: Annotated[str, Path(pattern=r"^[a-z][a-z0-9-]{0,79}$")
     run = validated(RunRecord, created[0])
     payload = {**body.model_dump(mode="json", exclude={"dataset"}), "file_ids": engine_ids}
     try:
-        if local:
+        if local_analytics:
             result = await run_local(body, run.id, agent.slug)
+        elif local_architect:
+            result = await architect.run(body, run.id, store.settings, request.app.state.architect_http)
         else:
             raw = await engine.request("POST", f"/agents/{agent.engine_slug}/run", user, json=payload)
             try:

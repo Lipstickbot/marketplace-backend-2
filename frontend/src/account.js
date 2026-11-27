@@ -222,9 +222,12 @@ function renderBusiness(chosen = new URLSearchParams(location.search).get("agent
 }
 
 function renderAgentRun(agent) {
+  const supportedLanguages = [["ru", "Русский"], ["kk", "Қазақша"], ["en", "English"]]
+    .filter(([code]) => agent.supported_languages?.includes(code));
+  const languageOptions = supportedLanguages.map(([code, name]) => `<option value="${code}">${name}</option>`).join("");
   const documents = isAnalyticsAgent(agent.slug)
     ? '<label class="file-picker" data-analysis-file>Таблица в UTF-8 (необязательно)<input name="dataset" type="file" accept=".csv,.tsv"><span class="muted">До 128 КиБ и 5 000 строк данных.</span></label>'
-    : `<fieldset data-engine-files><legend>Документы для запроса</legend>${
+    : !agent.accepted_file_purposes.length ? "" : `<fieldset data-engine-files><legend>Документы для запроса</legend>${
       files
         .filter((f) => !f.deletion_requested_at && agent.accepted_file_purposes.includes(f.purpose))
         .map((f) => `<label><input name="file_ids" type="checkbox" value="${e(f.id)}">${e(f.original_name)}</label>`)
@@ -236,7 +239,8 @@ function renderAgentRun(agent) {
       ${panel("Запуск агента", `<form id="run" class="work-form">
         <input name="slug" type="hidden" value="${e(agent.slug)}">
         <label>Запрос<textarea name="message" required maxlength="8000"></textarea></label>
-        <label>Язык<select name="language"><option value="ru">Русский</option><option value="kk">Қазақша</option><option value="en">English</option><option value="auto">Автоматически</option></select></label>
+        ${agent.engine_slug === "architect-sa-mentor" ? '<p class="muted">Текст запроса передаётся Gemini. Удалите из него конфиденциальные данные.</p>' : ""}
+        <label>Язык<select name="language">${languageOptions}<option value="auto">Автоматически</option></select></label>
         ${documents}
         <button class="btn btn--primary">Выполнить запрос</button>
       </form>`)}
@@ -272,11 +276,13 @@ async function adminView() {
     all("/admin/connect-requests?status=pending"),
     all("/admin/agent-submissions?status=pending"),
   ]);
-  const form = (type, row) =>
-    `<form class="work-form work-item" data-review="${type}" data-id="${e(row.id)}"><p>${e(type === "connect-requests" ? row.company_id : row.name)}</p>${type === "connect-requests" ? `<p>${e(row.message)}</p><p class="muted">Агент: ${e(row.agent_id)}</p>` : `<p>${e(row.description)}</p>${row.repository_url ? `<a class="link" href="${e(row.repository_url)}" target="_blank" rel="noopener noreferrer">Открыть репозиторий ↗</a>` : ""}
-      <label>Идентификатор в AI Engine (engine_slug)<input name="engine_slug" pattern="[a-z][a-z0-9-]{0,79}" placeholder="sales-assistant"></label>
-      <p class="muted">Для активации укажите идентификатор уже подключённого к AI Engine агента.</p>
+  const form = (type, row) => {
+    const architect = /^https:\/\/github\.com\/bigfigboy\/architect-ai-systems-business-analyst(?:\.git)?\/?$/i.test(row.repository_url || "");
+    return `<form class="work-form work-item" data-review="${type}" data-id="${e(row.id)}"><p>${e(type === "connect-requests" ? row.company_id : row.name)}</p>${type === "connect-requests" ? `<p>${e(row.message)}</p><p class="muted">Агент: ${e(row.agent_id)}</p>` : `<p>${e(row.description)}</p>${row.repository_url ? `<a class="link" href="${e(row.repository_url)}" target="_blank" rel="noopener noreferrer">Открыть репозиторий ↗</a>` : ""}
+      <label>Идентификатор исполнителя (engine_slug)<input name="engine_slug" pattern="[a-z][a-z0-9-]{0,79}" placeholder="sales-assistant"${architect ? ' value="architect-sa-mentor"' : ""}></label>
+      <p class="muted">${architect ? "ARCHITECT запускается в Keme AI. Перед публикацией система проверит ответ Gemini." : "Для активации укажите идентификатор агента, подключённого к AI Engine."}</p>
       <label>Адрес карточки в каталоге<input name="publication_slug" pattern="[a-z][a-z0-9-]{0,79}" placeholder="По умолчанию совпадает с engine_slug"></label>`}<label>Решение<select name="decision"><option value="approved">${type === "agent-submissions" ? "Одобрить и активировать" : "Одобрить"}</option>${type === "agent-submissions" ? '<option value="coming_soon">Одобрить со статусом «Скоро»</option>' : ""}<option value="rejected">Отклонить</option></select></label><label>Комментарий<textarea name="review_note" maxlength="4000"></textarea></label><button class="btn btn--primary">Сохранить решение</button></form>`;
+  };
   root.innerHTML = `<div class="work-grid">${panel("Подключения бизнеса", connects.map((r) => form("connect-requests", r)).join("") || "<p>Нет ожидающих заявок.</p>")}${panel("Заявки на публикацию", submissions.map((r) => form("agent-submissions", r)).join("") || "<p>Нет ожидающих заявок.</p>")}</div>`;
 }
 function draftView() {
@@ -511,10 +517,10 @@ root.addEventListener("submit", async (event) => {
       const activate = publication && value.decision === "approved";
       const body = { decision: value.decision === "coming_soon" ? "approved" : value.decision, review_note: value.review_note };
       if (activate) {
-        if (!value.engine_slug) throw new Error("Укажите идентификатор агента в AI Engine.");
+        if (!value.engine_slug) throw new Error("Укажите идентификатор исполнителя агента.");
         body.engine_slug = value.engine_slug;
         if (value.publication_slug) body.publication_slug = value.publication_slug;
-        button.textContent = "Проверяем AI Engine…";
+        button.textContent = "Проверяем запуск агента…";
       } else if (publication && value.decision === "coming_soon") {
         if (!value.publication_slug) throw new Error("Укажите адрес карточки в каталоге.");
         body.publication_slug = value.publication_slug;
